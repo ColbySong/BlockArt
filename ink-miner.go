@@ -64,9 +64,10 @@ func main() {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	handleError("Could not resolve miner address", err)
 
+	inbound, err := net.ListenTCP("tcp", addr)
+
 	// Create InkMiner instance
-	// todo - replace with TCP listener addr?
-	miner := &InkMiner{addr, server, &pub, priv, nil}
+	miner := &InkMiner{inbound.Addr(), server, &pub, priv, nil}
 	settings := miner.register()
 	miner.settings = &settings
 
@@ -79,7 +80,6 @@ func main() {
 	minerServer := rpc.NewServer()
 	minerServer.Register(mserver)
 
-	inbound, err := net.ListenTCP("tcp", addr)
 	handleError("Listen error", err)
 	outLog.Printf("Server started. Receiving on %s\n", inbound.Addr().String())
 
