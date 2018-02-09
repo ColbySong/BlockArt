@@ -26,6 +26,7 @@ type InkMiner struct {
 	pubKey   *ecdsa.PublicKey
 	privKey  *ecdsa.PrivateKey
 	settings *blockartlib.MinerNetSettings
+	miners   []net.Addr
 }
 
 type MServer struct {
@@ -67,11 +68,12 @@ func main() {
 	inbound, err := net.ListenTCP("tcp", addr)
 
 	// Create InkMiner instance
-	miner := &InkMiner{inbound.Addr(), server, &pub, priv, nil}
+	miner := &InkMiner{inbound.Addr(), server, &pub, priv, nil, make([]net.Addr, 0)}
 	settings := miner.register()
 	miner.settings = &settings
 
 	go miner.sendHeartBeats()
+	go miner.maintainMinerConnections()
 
 	// Start listening for RPC calls from art & miner nodes
 	mserver := new(MServer)
@@ -87,6 +89,26 @@ func main() {
 		conn, _ := inbound.Accept()
 		go minerServer.ServeConn(conn)
 	}
+}
+
+// Keep track of minimum number of miners at all times (MinNumMinerConnections)
+func (m InkMiner) maintainMinerConnections() {
+	m.miners = m.getNodesFromServer()
+
+	for {
+		if uint8(len(m.miners)) < m.settings.MinNumMinerConnections {
+			m.miners = m.getNodesFromServer()
+		}
+
+		time.Sleep(time.Duration(m.settings.HeartBeat) * time.Millisecond)
+	}
+}
+
+func (m InkMiner) getNodesFromServer() []net.Addr {
+	var nodes []net.Addr
+	err := m.server.Call("RServer.GetNodes", m.pubKey, &nodes)
+	handleError("Could not get nodes from server", err)
+	return nodes
 }
 
 // Registers the miner node on the server by making an RPC call.
