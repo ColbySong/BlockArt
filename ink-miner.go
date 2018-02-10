@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"sync"
 	"time"
 
 	"./args"
@@ -20,13 +21,19 @@ import (
 
 const HeartbeatMultiplier = 2
 
+type ConnectedMiners struct {
+	sync.RWMutex
+	all []net.Addr
+}
+
+var connectedMiners = ConnectedMiners{all: make([]net.Addr, 0, 0)}
+
 type InkMiner struct {
 	addr     net.Addr
 	server   *rpc.Client
 	pubKey   *ecdsa.PublicKey
 	privKey  *ecdsa.PrivateKey
 	settings *blockartlib.MinerNetSettings
-	miners   []net.Addr
 }
 
 type MServer struct {
@@ -68,7 +75,7 @@ func main() {
 	inbound, err := net.ListenTCP("tcp", addr)
 
 	// Create InkMiner instance
-	miner := &InkMiner{inbound.Addr(), server, &pub, priv, nil, make([]net.Addr, 0)}
+	miner := &InkMiner{inbound.Addr(), server, &pub, priv, nil}
 	settings := miner.register()
 	miner.settings = &settings
 
@@ -93,12 +100,16 @@ func main() {
 
 // Keep track of minimum number of miners at all times (MinNumMinerConnections)
 func (m InkMiner) maintainMinerConnections() {
-	m.miners = m.getNodesFromServer()
+	connectedMiners.Lock()
+	connectedMiners.all = m.getNodesFromServer()
+	connectedMiners.Unlock()
 
 	for {
-		if uint8(len(m.miners)) < m.settings.MinNumMinerConnections {
-			m.miners = m.getNodesFromServer()
+		connectedMiners.Lock()
+		if uint8(len(connectedMiners.all)) < m.settings.MinNumMinerConnections {
+			connectedMiners.all = m.getNodesFromServer()
 		}
+		connectedMiners.Unlock()
 
 		time.Sleep(time.Duration(m.settings.HeartBeat) * time.Millisecond)
 	}
