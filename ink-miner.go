@@ -26,7 +26,10 @@ type ConnectedMiners struct {
 	all []net.Addr
 }
 
-var connectedMiners = ConnectedMiners{all: make([]net.Addr, 0, 0)}
+type PendingOperations struct {
+	sync.RWMutex
+	all map[string]*args.Operation
+}
 
 type InkMiner struct {
 	addr     net.Addr
@@ -41,8 +44,10 @@ type MServer struct {
 }
 
 var (
-	errLog *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
-	outLog *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	errLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	connectedMiners               = ConnectedMiners{all: make([]net.Addr, 0, 0)}
+	pendingOperations             = PendingOperations{all: make(map[string]*args.Operation)}
 )
 
 // Start the miner.
@@ -113,6 +118,32 @@ func (m InkMiner) maintainMinerConnections() {
 
 		time.Sleep(time.Duration(m.settings.HeartBeat) * time.Millisecond)
 	}
+}
+
+func (s *MServer) DisseminateOperation(op args.Operation, _ignore *bool) error {
+	pendingOperations.Lock()
+
+	if _, exists := pendingOperations.all[op.Hash]; !exists {
+		// Add operation to pending transaction
+		pendingOperations.all[op.Hash] = &args.Operation{op.Op, op.Hash}
+		pendingOperations.Unlock()
+
+		// Send operation to all connected miners
+		connectedMiners.Lock()
+		for _, minerAddr := range connectedMiners.all {
+			miner, err := rpc.Dial("tcp", minerAddr.String())
+			handleError("Could not dial miner", err)
+			err = miner.Call("MServer.DisseminateOperation", op, nil)
+			handleError("Could not call RPC method MServer.DisseminateOperation", err)
+		}
+		connectedMiners.Unlock()
+
+		return nil
+	}
+
+	pendingOperations.Unlock()
+
+	return nil
 }
 
 func (m InkMiner) getNodesFromServer() []net.Addr {
