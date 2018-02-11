@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/gob"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -26,6 +27,10 @@ type InkMiner struct {
 	pubKey   *ecdsa.PublicKey
 	privKey  *ecdsa.PrivateKey
 	settings *blockartlib.MinerNetSettings
+}
+
+type MArtNode struct {
+	inkMiner *InkMiner // so artnode can get instance of ink miner
 }
 
 type MServer struct {
@@ -77,8 +82,12 @@ func main() {
 	mserver := new(MServer)
 	mserver.inkMiner = miner
 
+	mArtNode := new(MArtNode)
+	mArtNode.inkMiner = miner
+
 	minerServer := rpc.NewServer()
 	minerServer.Register(mserver)
+	minerServer.Register(mArtNode)
 
 	handleError("Listen error", err)
 	outLog.Printf("Server started. Receiving on %s\n", inbound.Addr().String())
@@ -115,6 +124,14 @@ func (m InkMiner) sendHeartBeat() {
 	var ignoredResp bool // there is no response for this RPC call
 	err := m.server.Call("RServer.HeartBeat", *m.pubKey, &ignoredResp)
 	handleError("Could not send heartbeat to server", err)
+}
+
+func (a *MArtNode) openCanvas(privKey ecdsa.PrivateKey, canvasSettings blockartlib.CanvasSettings) error {
+	if privKey == a.inkMiner.privKey { //TODO: can use == to compare priv keys?
+		canvasSettings = a.inkMiner.settings.CanvasSettings
+		return nil
+	}
+	return errors.New(blockartlib.errorName[INVALIDPRIVKEY]) // TODO: return error if priv keys do not match???
 }
 
 func handleError(msg string, e error) {
