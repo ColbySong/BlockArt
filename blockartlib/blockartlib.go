@@ -14,6 +14,7 @@ import (
 	"net/rpc"
 	"os"
 	"strings"
+	"../util"
 )
 
 var (
@@ -259,6 +260,14 @@ type Shape struct {
 }
 
 func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
+	if shapeType != PATH {
+		return "", "", 0, InvalidShapeSvgStringError("Only PATH shape is supported")
+	}
+
+	// ValidateShapeSVGString will return the right type of error
+	if _, err := util.ValidateShapeSVGString(shapeSvgString); err != nil {
+		return "", "", 0, err
+	}
 
 	addShapeRequest := AddShapeRequest{
 		ValidateNum: validateNum,
@@ -274,11 +283,7 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 		case ErrorName[INSUFFICIENTINK]:
 			return "", "", 0, InsufficientInkError(resp.InkRemaining)
 		case ErrorName[INVALIDSHAPESVGSTRING]:
-			return "", "", 0, InvalidShapeSvgStringError(shapeSvgString)
-		case ErrorName[INVALIDSHAPESVGSTRING]:
 			return "", "", 0, InsufficientInkError(resp.InkRemaining)
-		case ErrorName[SHAPESVGSTRINGTOOLONG]:
-			return "", "", 0, ShapeSvgStringTooLongError(shapeSvgString)
 		case ErrorName[SHAPEOVERLAP]:
 			return "", "", 0, ShapeOverlapError(resp.ShapeHash) //The returning shape hash is the overlapping one
 		case ErrorName[OUTOFBOUNDS]:

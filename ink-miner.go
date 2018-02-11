@@ -313,15 +313,8 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
 	// check ink level
-	// check valid svg str and svg str length
 	// check shape overlap err (same app ok?)
 	// check canvas outofbounds err
-
-	_, err := util.ValidateShapeSVGString(shapeRequest.SvgString) // TODO: change err handling in util?
-	if err != nil {
-		//check errors
-	}
-
 	inkRemaining := uint32(0) // stub
 	svgPath, err := util.ConvertPathToPoints(shapeRequest.SvgString)
 	isTransparent := false //use shape.Fill and check transparency
