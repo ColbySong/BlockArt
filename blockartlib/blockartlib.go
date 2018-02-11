@@ -10,8 +10,15 @@ package blockartlib
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"log"
 	"net/rpc"
+	"os"
 	"strings"
+)
+
+var (
+	errLog *log.Logger = log.New(os.Stderr, "[blockartlib] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	outLog *log.Logger = log.New(os.Stderr, "[blockartlib] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -141,8 +148,8 @@ func (e InvalidBlockHashError) Error() string {
 // </ERROR DEFINITIONS>
 type InvalidPrivKey struct{}
 
-func (e InvalidPrivKey) Error() string {
-	return fmt.Sprintf("BlockArt: The given miner private key does not match")
+func (InvalidPrivKey) Error() string {
+	return fmt.Sprintf("BlockArt: The given private key does not match the private key at the miner address given")
 }
 
 // CUSTOM ERROR DEFINITIONS
@@ -164,12 +171,6 @@ var errorName = []string{
 	SHAPEOVERLAP:          "SHAPEOVERLAP",
 	OUTOFBOUNDS:           "OUTOFBOUNDS",
 	INVALIDPRIVKEY:        "INVALIDPRIVKEY",
-}
-
-type InvalidPrivKey struct{}
-
-func (InvalidPrivKey) Error() string {
-	return fmt.Sprintf("BlockArt: The given private key does not match the private key at the miner address given")
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
