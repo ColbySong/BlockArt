@@ -250,6 +250,8 @@ type AddShapeRequest struct {
 	SvgString string
 	Fill      string
 	Stroke    string
+	IsTransparent bool
+	IsClosed      bool
 }
 
 type Shape struct {
@@ -269,12 +271,28 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 		return "", "", 0, err
 	}
 
+	isTransparent := false
+	isClosed := false
+
+	if fill == "transparent" {
+		isTransparent = true
+	}
+
+	lastSVGChar := string(shapeSvgString[len(shapeSvgString) - 1])
+
+	if lastSVGChar == "Z" || lastSVGChar == "z" {
+		isClosed = true
+	}
+
 	addShapeRequest := AddShapeRequest{
 		ValidateNum: validateNum,
 		ShapeType: shapeType,
 		SvgString: shapeSvgString,
 		Fill:      fill,
-		Stroke:    stroke}
+		Stroke:    stroke,
+		IsTransparent: isTransparent,
+		IsClosed: isClosed,
+	}
 
 	resp := NewShapeResponse{}
 	err = c.MinerRPC.Call("MArtNode.AddShape", addShapeRequest, &resp)
