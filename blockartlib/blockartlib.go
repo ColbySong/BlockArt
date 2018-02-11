@@ -143,11 +143,21 @@ func (e InvalidBlockHashError) Error() string {
 type ErrorEnum int
 
 const (
-	INVALIDPRIVKEY ErrorEnum = iota
+	INSUFFICIENTINK ErrorEnum = iota
+	INVALIDSHAPESVGSTRING
+	SHAPESVGSTRINGTOOLONG
+	SHAPEOVERLAP
+	OUTOFBOUNDS
+	INVALIDPRIVKEY
 )
 
 var errorName = []string{
-	INVALIDPRIVKEY: "INVALIDPRIVKEY",
+	INSUFFICIENTINK:       "INSUFFICIENTINK",
+	INVALIDSHAPESVGSTRING: "INVALIDSHAPESVGSTRING",
+	SHAPESVGSTRINGTOOLONG: "SHAPESVGSTRINGTOOLONG",
+	SHAPEOVERLAP:          "SHAPEOVERLAP",
+	OUTOFBOUNDS:           "OUTOFBOUNDS",
+	INVALIDPRIVKEY:        "INVALIDPRIVKEY",
 }
 
 type InvalidPrivKey struct{}
@@ -209,19 +219,54 @@ type Canvas interface {
 	CloseCanvas() (inkRemaining uint32, err error)
 }
 
+type NewShapeResponse struct {
+	ShapeHash    string
+	blockHash    string
+	inkRemaining uint32
+}
+
+type Shape struct {
+	ShapeType ShapeType
+	SvgString string
+	Fill      string
+	Stroke    string
+}
+
 func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
 
-	return "", "", 1, nil
+	shape := Shape{
+		ShapeType: shapeType,
+		SvgString: shapeSvgString,
+		Fill:      fill,
+		Stroke:    stroke}
+
+	resp := NewShapeResponse{}
+	c.MinerRPC.Call("MArtNode.AddShape", shape, &resp)
+
+	// - DisconnectedError
+	// - InsufficientInkError
+	// - InvalidShapeSvgStringError
+	// - ShapeSvgStringTooLongError
+	// - ShapeOverlapError
+	// - OutOfBoundsError
+
+	return resp.ShapeHash, resp.blockHash, resp.inkRemaining, nil
 }
 
 func (c CanvasStruct) GetSvgString(shapeHash string) (svgString string, err error) {
 
-	return "", nil
+	//TODO: miner side: implement map[shapeHash]Shape where Shape has shapeType, svgstring, fill, stroke
+	return "", InvalidShapeHashError(shapeHash)
 }
 
 func (c CanvasStruct) GetInk() (inkRemaining uint32, err error) {
-
-	return 1, nil
+	var ignoredreq = true
+	var ink uint32
+	err = c.MinerRPC.Call("MArtNode.GetInk", ignoredreq, &ink)
+	if err != nil {
+		return 0, DisconnectedError(c.MinerAddr)
+	}
+	return ink, nil
 }
 
 func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
@@ -245,7 +290,7 @@ func (c CanvasStruct) GetChildren(blockHash string) (blockHashes []string, err e
 }
 
 func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
-	//TODO: so far, can't see what info miner needs to know about artnode on disconnect
+	//TODO: so far, can't see what info miner needs to know about artnode upon disconnect
 	var ignoredreq = true
 	var resp uint32
 	err = c.MinerRPC.Call("MArtNode.ArtNodeDisconnecting", ignoredreq, &resp)
