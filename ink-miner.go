@@ -150,14 +150,7 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
-		connectedMiners.Lock()
-		for _, minerAddr := range connectedMiners.all {
-			miner, err := rpc.Dial("tcp", minerAddr.String())
-			handleError("Could not dial miner", err)
-			err = miner.Call("MServer.DisseminateOperation", op, nil)
-			handleError("Could not call RPC method MServer.DisseminateOperation", err)
-		}
-		connectedMiners.Unlock()
+		sendToAllConnectedMiners("MServer.DisseminateOperation", op)
 
 		return nil
 	}
@@ -266,6 +259,17 @@ func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
 	// TODO - clear ops that are included in this block, but only if confident that they
 	// TODO   will be part of the main chain
 	return nil
+}
+
+func sendToAllConnectedMiners(remoteProcedure string, payload interface{}) {
+	connectedMiners.Lock()
+	for _, minerAddr := range connectedMiners.all {
+		miner, err := rpc.Dial("tcp", minerAddr.String())
+		handleError("Could not dial miner: "+minerAddr.String(), err)
+		err = miner.Call(remoteProcedure, payload, nil)
+		handleError("Could not call RPC method: "+remoteProcedure, err)
+	}
+	connectedMiners.Unlock()
 }
 
 // Compute the MD5 hash of a Block
