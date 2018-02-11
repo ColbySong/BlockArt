@@ -142,7 +142,7 @@ func (e InvalidBlockHashError) Error() string {
 type InvalidPrivKey struct{}
 
 func (e InvalidPrivKey) Error() string {
-	return fmt.Sprintf("BlockArt: The given miner private key does not match [%s]", string(e))
+	return fmt.Sprintf("BlockArt: The given miner private key does not match")
 }
 
 // CUSTOM ERROR DEFINITIONS

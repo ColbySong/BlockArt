@@ -126,6 +126,8 @@ func (m InkMiner) sendHeartBeat() {
 	handleError("Could not send heartbeat to server", err)
 }
 
+// Give requesting art node the canvas settings
+// Also check if the art node knows your private key
 func (a *MArtNode) openCanvas(privKey ecdsa.PrivateKey, canvasSettings blockartlib.CanvasSettings) error {
 	if privKey == a.inkMiner.privKey { //TODO: can use == to compare priv keys?
 		canvasSettings = a.inkMiner.settings.CanvasSettings
