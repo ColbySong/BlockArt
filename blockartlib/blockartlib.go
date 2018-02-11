@@ -344,7 +344,7 @@ func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
 	//TODO: so far, can't see what info miner needs to know about artnode upon disconnect
 	var ignoredreq = true
 	var resp uint32
-	err = c.MinerRPC.Call("MArtNode.ArtNodeDisconnecting", ignoredreq, &resp)
+	err = c.MinerRPC.Call("MArtNode.GetInk", ignoredreq, &resp)
 	if err = c.MinerRPC.Close(); err != nil {
 		return 0, DisconnectedError(c.MinerAddr)
 	}
