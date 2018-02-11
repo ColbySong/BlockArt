@@ -34,7 +34,7 @@ type ConnectedMiners struct {
 
 type PendingOperations struct {
 	sync.RWMutex
-	all map[string]*args.Operation
+	all map[string]*blockchain.OpRecord
 }
 
 type InkMiner struct {
@@ -54,7 +54,7 @@ var (
 	errLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	connectedMiners               = ConnectedMiners{all: make([]net.Addr, 0, 0)}
-	pendingOperations             = PendingOperations{all: make(map[string]*args.Operation)}
+	pendingOperations             = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
 )
 
 // Start the miner.
@@ -141,12 +141,12 @@ func (m InkMiner) maintainMinerConnections() {
 	}
 }
 
-func (s *MServer) DisseminateOperation(op args.Operation, _ignore *bool) error {
+func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
 	pendingOperations.Lock()
 
-	if _, exists := pendingOperations.all[op.Hash]; !exists {
+	if _, exists := pendingOperations.all[op.OpSig]; !exists {
 		// Add operation to pending transaction
-		pendingOperations.all[op.Hash] = &args.Operation{op.Op, op.Hash}
+		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
