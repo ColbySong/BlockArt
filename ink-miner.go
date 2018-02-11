@@ -15,11 +15,12 @@ import (
 	"sync"
 	"time"
 
+	"crypto/md5"
+	"encoding/json"
+
 	"./args"
 	"./blockartlib"
 	"./blockchain"
-	"encoding/json"
-	"crypto/md5"
 )
 
 const HeartbeatMultiplier = 2
@@ -292,4 +293,3 @@ func handleError(msg string, e error) {
 		errLog.Fatalf("%s, err = %s\n", msg, e.Error())
 	}
 }
-
