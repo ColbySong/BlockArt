@@ -17,9 +17,14 @@ import (
 
 	"./args"
 	"./blockartlib"
+	"./blockchain"
+	"encoding/json"
+	"crypto/md5"
 )
 
 const HeartbeatMultiplier = 2
+const FirstNonce = 0 // the first uint32
+const FirstBlockNum = 1
 
 type ConnectedMiners struct {
 	sync.RWMutex
@@ -32,11 +37,14 @@ type PendingOperations struct {
 }
 
 type InkMiner struct {
-	addr     net.Addr
-	server   *rpc.Client
-	pubKey   *ecdsa.PublicKey
-	privKey  *ecdsa.PrivateKey
-	settings *blockartlib.MinerNetSettings
+	addr       net.Addr
+	server     *rpc.Client
+	pubKey     *ecdsa.PublicKey
+	privKey    *ecdsa.PrivateKey
+	settings   *blockartlib.MinerNetSettings
+	opRecords  []*blockchain.OpRecord
+	miners     []net.Addr
+	blockChain *blockchain.BlockChain
 }
 
 type MServer struct {
@@ -79,13 +87,28 @@ func main() {
 
 	inbound, err := net.ListenTCP("tcp", addr)
 
+	bc := &blockchain.BlockChain{
+		Blocks: make(map[string]*blockchain.Block),
+	}
+
 	// Create InkMiner instance
-	miner := &InkMiner{inbound.Addr(), server, &pub, priv, nil}
+	miner := &InkMiner{
+		inbound.Addr(),
+		server,
+		&pub,
+		priv,
+		nil,
+		make([]*blockchain.OpRecord, 0),
+		make([]net.Addr, 0),
+		bc,
+	}
+
 	settings := miner.register()
 	miner.settings = &settings
 
-	go miner.sendHeartBeats()
+	go miner.startSendingHeartbeats()
 	go miner.maintainMinerConnections()
+	go miner.startMiningBlocks()
 
 	// Start listening for RPC calls from art & miner nodes
 	mserver := new(MServer)
@@ -167,7 +190,7 @@ func (m InkMiner) register() blockartlib.MinerNetSettings {
 }
 
 // Periodically send heartbeats to the server at period defined by server times a frequency multiplier
-func (m InkMiner) sendHeartBeats() {
+func (m InkMiner) startSendingHeartbeats() {
 	for {
 		m.sendHeartBeat()
 		time.Sleep(time.Duration(m.settings.HeartBeat) / HeartbeatMultiplier * time.Millisecond)
@@ -179,6 +202,87 @@ func (m InkMiner) sendHeartBeat() {
 	var ignoredResp bool // there is no response for this RPC call
 	err := m.server.Call("RServer.HeartBeat", *m.pubKey, &ignoredResp)
 	handleError("Could not send heartbeat to server", err)
+}
+
+func (m InkMiner) startMiningBlocks() {
+	for {
+		block := m.computeBlock()
+
+		hash := computeBlockHash(*block)
+		m.blockChain.Blocks[hash] = block
+		m.blockChain.NewestHash = hash
+
+		m.broadcastNewBlock(block)
+	}
+}
+
+// Mine a single block that includes a set of operations.
+func (m InkMiner) computeBlock() *blockchain.Block {
+	var nonce uint32 = FirstNonce
+	for {
+		var numZeros uint8
+
+		// todo - need to lock opRecords for this for-block. Justification: empty records may not be empty
+		// todo   by the time the program starts to begin hashing the block
+
+		// todo - may also need to lock m.blockChain
+
+		if len(m.opRecords) == 0 {
+			numZeros = m.settings.PoWDifficultyNoOpBlock
+		} else {
+			numZeros = m.settings.PoWDifficultyOpBlock
+		}
+
+		var nextBlockNum uint32
+
+		if len(m.blockChain.Blocks) == 0 {
+			nextBlockNum = FirstBlockNum
+		} else {
+			nextBlockNum = m.blockChain.Blocks[m.blockChain.NewestHash].BlockNum + 1
+		}
+
+		block := &blockchain.Block{
+			BlockNum:    nextBlockNum,
+			PrevHash:    m.blockChain.NewestHash,
+			OpRecords:   m.opRecords,
+			MinerPubKey: m.pubKey,
+			Nonce:       nonce,
+		}
+		hash := computeBlockHash(*block)
+
+		if verifyTrailingZeros(hash, numZeros) {
+			outLog.Printf("Successfully mined a block. Hash: %s with nonce: %d\n", hash, block.Nonce)
+			return block
+		}
+
+		nonce = nonce + 1
+	}
+}
+
+// Broadcast the newly-mined block to the miner network
+func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
+	// TODO - stub
+	return nil
+}
+
+// Compute the MD5 hash of a Block
+func computeBlockHash(block blockchain.Block) string {
+	bytes, err := json.Marshal(block)
+	handleError("Could not marshal block to JSON", err)
+
+	hash := md5.New()
+	hash.Write(bytes)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// Verify that a hash ends with some number of zeros
+func verifyTrailingZeros(hash string, numZeros uint8) bool {
+	for i := uint8(0); i < numZeros; i++ {
+		if hash[31-i] != '0' {
+			return false
+		}
+	}
+	return true
 }
 
 func handleError(msg string, e error) {
