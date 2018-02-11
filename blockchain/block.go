@@ -1,13 +1,14 @@
 package blockchain
 
 import "crypto/ecdsa"
+import "../args"
 
 // todo - include ink level of every miner in the network
 // todo - include all shapes on the canvas
 type Block struct {
 	BlockNum uint32
 	PrevHash string 			// MD5 hash of [prevHash, opSig, minerPubKey, nonce]
-	OpRecords []*OpRecord
+	OpRecords map[string]*args.Operation // todo - dchen - replace with OpRecord
 	MinerPubKey *ecdsa.PublicKey
 	Nonce uint32
 }

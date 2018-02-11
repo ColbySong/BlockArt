@@ -42,8 +42,6 @@ type InkMiner struct {
 	pubKey     *ecdsa.PublicKey
 	privKey    *ecdsa.PrivateKey
 	settings   *blockartlib.MinerNetSettings
-	opRecords  []*blockchain.OpRecord
-	miners     []net.Addr
 	blockChain *blockchain.BlockChain
 }
 
@@ -93,18 +91,17 @@ func main() {
 
 	// Create InkMiner instance
 	miner := &InkMiner{
-		inbound.Addr(),
-		server,
-		&pub,
-		priv,
-		nil,
-		make([]*blockchain.OpRecord, 0),
-		make([]net.Addr, 0),
-		bc,
+		addr:       inbound.Addr(),
+		server:     server,
+		pubKey:     &pub,
+		privKey:    priv,
+		blockChain: bc,
 	}
 
 	settings := miner.register()
 	miner.settings = &settings
+
+	miner.blockChain.NewestHash = settings.GenesisBlockHash
 
 	go miner.startSendingHeartbeats()
 	go miner.maintainMinerConnections()
@@ -218,16 +215,17 @@ func (m InkMiner) startMiningBlocks() {
 
 // Mine a single block that includes a set of operations.
 func (m InkMiner) computeBlock() *blockchain.Block {
+	defer pendingOperations.Unlock()
+	
 	var nonce uint32 = FirstNonce
 	for {
-		var numZeros uint8
+		pendingOperations.Lock()
 
-		// todo - need to lock opRecords for this for-block. Justification: empty records may not be empty
-		// todo   by the time the program starts to begin hashing the block
+		var numZeros uint8
 
 		// todo - may also need to lock m.blockChain
 
-		if len(m.opRecords) == 0 {
+		if len(pendingOperations.all) == 0 {
 			numZeros = m.settings.PoWDifficultyNoOpBlock
 		} else {
 			numZeros = m.settings.PoWDifficultyOpBlock
@@ -244,7 +242,7 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 		block := &blockchain.Block{
 			BlockNum:    nextBlockNum,
 			PrevHash:    m.blockChain.NewestHash,
-			OpRecords:   m.opRecords,
+			OpRecords:   pendingOperations.all,
 			MinerPubKey: m.pubKey,
 			Nonce:       nonce,
 		}
@@ -256,6 +254,8 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 		}
 
 		nonce = nonce + 1
+
+		pendingOperations.Unlock()
 	}
 }
 
