@@ -13,33 +13,52 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"sync"
 	"time"
+
+	"crypto/md5"
+	"encoding/json"
 
 	"./args"
 	"./blockartlib"
+	"./blockchain"
 )
 
 const HeartbeatMultiplier = 2
+const FirstNonce = 0 // the first uint32
+const FirstBlockNum = 1
 
-type InkMiner struct {
-	addr     net.Addr
-	server   *rpc.Client
-	pubKey   *ecdsa.PublicKey
-	privKey  *ecdsa.PrivateKey
-	settings *blockartlib.MinerNetSettings
+type ConnectedMiners struct {
+	sync.RWMutex
+	all []net.Addr
 }
 
-type MArtNode struct {
-	inkMiner *InkMiner // so artnode can get instance of ink miner
+type PendingOperations struct {
+	sync.RWMutex
+	all map[string]*args.Operation
+}
+
+type InkMiner struct {
+	addr       net.Addr
+	server     *rpc.Client
+	pubKey     *ecdsa.PublicKey
+	privKey    *ecdsa.PrivateKey
+	settings   *blockartlib.MinerNetSettings
+	blockChain *blockchain.BlockChain
 }
 
 type MServer struct {
 	inkMiner *InkMiner // TODO: Not sure if MServer needs to know about InkMiner
 }
+type MArtNode struct {
+	inkMiner *InkMiner // so artnode can get instance of ink miner
+}
 
 var (
-	errLog *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
-	outLog *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	errLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	connectedMiners               = ConnectedMiners{all: make([]net.Addr, 0, 0)}
+	pendingOperations             = PendingOperations{all: make(map[string]*args.Operation)}
 )
 
 // Start the miner.
@@ -71,12 +90,27 @@ func main() {
 
 	inbound, err := net.ListenTCP("tcp", addr)
 
+	bc := &blockchain.BlockChain{
+		Blocks: make(map[string]*blockchain.Block),
+	}
+
 	// Create InkMiner instance
-	miner := &InkMiner{inbound.Addr(), server, &pub, priv, nil}
+	miner := &InkMiner{
+		addr:       inbound.Addr(),
+		server:     server,
+		pubKey:     &pub,
+		privKey:    priv,
+		blockChain: bc,
+	}
+
 	settings := miner.register()
 	miner.settings = &settings
 
-	go miner.sendHeartBeats()
+	miner.blockChain.NewestHash = settings.GenesisBlockHash
+
+	go miner.startSendingHeartbeats()
+	go miner.maintainMinerConnections()
+	go miner.startMiningBlocks()
 
 	// Start listening for RPC calls from art & miner nodes
 	mserver := new(MServer)
@@ -98,6 +132,56 @@ func main() {
 	}
 }
 
+// Keep track of minimum number of miners at all times (MinNumMinerConnections)
+func (m InkMiner) maintainMinerConnections() {
+	connectedMiners.Lock()
+	connectedMiners.all = m.getNodesFromServer()
+	connectedMiners.Unlock()
+
+	for {
+		connectedMiners.Lock()
+		if uint8(len(connectedMiners.all)) < m.settings.MinNumMinerConnections {
+			connectedMiners.all = m.getNodesFromServer()
+		}
+		connectedMiners.Unlock()
+
+		time.Sleep(time.Duration(m.settings.HeartBeat) * time.Millisecond)
+	}
+}
+
+func (s *MServer) DisseminateOperation(op args.Operation, _ignore *bool) error {
+	pendingOperations.Lock()
+
+	if _, exists := pendingOperations.all[op.Hash]; !exists {
+		// Add operation to pending transaction
+		pendingOperations.all[op.Hash] = &args.Operation{op.Op, op.Hash}
+		pendingOperations.Unlock()
+
+		// Send operation to all connected miners
+		connectedMiners.Lock()
+		for _, minerAddr := range connectedMiners.all {
+			miner, err := rpc.Dial("tcp", minerAddr.String())
+			handleError("Could not dial miner", err)
+			err = miner.Call("MServer.DisseminateOperation", op, nil)
+			handleError("Could not call RPC method MServer.DisseminateOperation", err)
+		}
+		connectedMiners.Unlock()
+
+		return nil
+	}
+
+	pendingOperations.Unlock()
+
+	return nil
+}
+
+func (m InkMiner) getNodesFromServer() []net.Addr {
+	var nodes []net.Addr
+	err := m.server.Call("RServer.GetNodes", m.pubKey, &nodes)
+	handleError("Could not get nodes from server", err)
+	return nodes
+}
+
 // Registers the miner node on the server by making an RPC call.
 // Returns the miner network settings retrieved from the server.
 func (m InkMiner) register() blockartlib.MinerNetSettings {
@@ -112,7 +196,7 @@ func (m InkMiner) register() blockartlib.MinerNetSettings {
 }
 
 // Periodically send heartbeats to the server at period defined by server times a frequency multiplier
-func (m InkMiner) sendHeartBeats() {
+func (m InkMiner) startSendingHeartbeats() {
 	for {
 		m.sendHeartBeat()
 		time.Sleep(time.Duration(m.settings.HeartBeat) / HeartbeatMultiplier * time.Millisecond)
@@ -126,14 +210,100 @@ func (m InkMiner) sendHeartBeat() {
 	handleError("Could not send heartbeat to server", err)
 }
 
+func (m InkMiner) startMiningBlocks() {
+	for {
+		block := m.computeBlock()
+
+		hash := computeBlockHash(*block)
+		m.blockChain.Blocks[hash] = block
+		m.blockChain.NewestHash = hash
+
+		m.broadcastNewBlock(block)
+	}
+}
+
+// Mine a single block that includes a set of operations.
+func (m InkMiner) computeBlock() *blockchain.Block {
+	defer pendingOperations.Unlock()
+
+	var nonce uint32 = FirstNonce
+	for {
+		pendingOperations.Lock()
+
+		var numZeros uint8
+
+		// todo - may also need to lock m.blockChain
+
+		if len(pendingOperations.all) == 0 {
+			numZeros = m.settings.PoWDifficultyNoOpBlock
+		} else {
+			numZeros = m.settings.PoWDifficultyOpBlock
+		}
+
+		var nextBlockNum uint32
+
+		if len(m.blockChain.Blocks) == 0 {
+			nextBlockNum = FirstBlockNum
+		} else {
+			nextBlockNum = m.blockChain.Blocks[m.blockChain.NewestHash].BlockNum + 1
+		}
+
+		block := &blockchain.Block{
+			BlockNum:    nextBlockNum,
+			PrevHash:    m.blockChain.NewestHash,
+			OpRecords:   pendingOperations.all,
+			MinerPubKey: m.pubKey,
+			Nonce:       nonce,
+		}
+		hash := computeBlockHash(*block)
+
+		if verifyTrailingZeros(hash, numZeros) {
+			outLog.Printf("Successfully mined a block. Hash: %s with nonce: %d\n", hash, block.Nonce)
+			return block
+		}
+
+		nonce = nonce + 1
+
+		pendingOperations.Unlock()
+	}
+}
+
+// Broadcast the newly-mined block to the miner network
+func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
+	// TODO - stub
+	// TODO - clear ops that are included in this block, but only if confident that they
+	// TODO   will be part of the main chain
+	return nil
+}
+
+// Compute the MD5 hash of a Block
+func computeBlockHash(block blockchain.Block) string {
+	bytes, err := json.Marshal(block)
+	handleError("Could not marshal block to JSON", err)
+
+	hash := md5.New()
+	hash.Write(bytes)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// Verify that a hash ends with some number of zeros
+func verifyTrailingZeros(hash string, numZeros uint8) bool {
+	for i := uint8(0); i < numZeros; i++ {
+		if hash[31-i] != '0' {
+			return false
+		}
+	}
+	return true
+}
+
 // Give requesting art node the canvas settings
 // Also check if the art node knows your private key
 func (a *MArtNode) openCanvas(privKey ecdsa.PrivateKey, canvasSettings blockartlib.CanvasSettings) error {
-	if privKey == a.inkMiner.privKey { //TODO: can use == to compare priv keys?
+	if privKey == *a.inkMiner.privKey { //TODO: can use == to compare priv keys?
 		canvasSettings = a.inkMiner.settings.CanvasSettings
 		return nil
 	}
-	return errors.New(blockartlib.errorName[INVALIDPRIVKEY]) // TODO: return error if priv keys do not match???
+	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDPRIVKEY]) // TODO: return error if priv keys do not match???
 }
 
 func handleError(msg string, e error) {

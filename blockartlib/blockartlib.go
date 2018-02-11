@@ -162,15 +162,19 @@ const (
 	SHAPEOVERLAP
 	OUTOFBOUNDS
 	INVALIDPRIVKEY
+	INVALIDBLOCKHASH
+	SHAPEOWNERERROR
 )
 
-var errorName = []string{
+var ErrorName = []string{
 	INSUFFICIENTINK:       "INSUFFICIENTINK",
 	INVALIDSHAPESVGSTRING: "INVALIDSHAPESVGSTRING",
 	SHAPESVGSTRINGTOOLONG: "SHAPESVGSTRINGTOOLONG",
 	SHAPEOVERLAP:          "SHAPEOVERLAP",
 	OUTOFBOUNDS:           "OUTOFBOUNDS",
 	INVALIDPRIVKEY:        "INVALIDPRIVKEY",
+	INVALIDBLOCKHASH:      "INVALIDBLOCKHASH",
+	SHAPEOWNERERROR:       "SHAPEOWNERERROR",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -228,8 +232,13 @@ type Canvas interface {
 
 type NewShapeResponse struct {
 	ShapeHash    string
-	blockHash    string
-	inkRemaining uint32
+	BlockHash    string
+	InkRemaining uint32
+}
+
+type DeleteShapeReq struct {
+	ValidateNum uint8
+	ShapeHash   string
 }
 
 type Shape struct {
@@ -248,52 +257,87 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 		Stroke:    stroke}
 
 	resp := NewShapeResponse{}
-	c.MinerRPC.Call("MArtNode.AddShape", shape, &resp)
+	err = c.MinerRPC.Call("MArtNode.AddShape", shape, &resp)
+	if err != nil {
+		switch errorStr := err.Error(); errorStr {
+		case ErrorName[INSUFFICIENTINK]:
+			return "", "", 0, InsufficientInkError(resp.InkRemaining)
+		case ErrorName[INVALIDSHAPESVGSTRING]:
+			return "", "", 0, InvalidShapeSvgStringError(shapeSvgString)
+		case ErrorName[INVALIDSHAPESVGSTRING]:
+			return "", "", 0, InsufficientInkError(resp.InkRemaining)
+		case ErrorName[SHAPESVGSTRINGTOOLONG]:
+			return "", "", 0, ShapeSvgStringTooLongError(shapeSvgString)
+		case ErrorName[SHAPEOVERLAP]:
+			return "", "", 0, ShapeOverlapError(resp.ShapeHash) //The returning shape hash is the overlapping one
+		case ErrorName[OUTOFBOUNDS]:
+			return "", "", 0, OutOfBoundsError(OutOfBoundsError{})
+		default:
+			return "", "", 0, DisconnectedError(c.MinerAddr)
+		}
 
-	// - DisconnectedError
-	// - InsufficientInkError
-	// - InvalidShapeSvgStringError
-	// - ShapeSvgStringTooLongError
-	// - ShapeOverlapError
-	// - OutOfBoundsError
-
-	return resp.ShapeHash, resp.blockHash, resp.inkRemaining, nil
+	}
+	return resp.ShapeHash, resp.BlockHash, resp.InkRemaining, nil
 }
 
 func (c CanvasStruct) GetSvgString(shapeHash string) (svgString string, err error) {
-
+	err = c.MinerRPC.Call("MArtNode.GetSvgString", shapeHash, &svgString)
 	//TODO: miner side: implement map[shapeHash]Shape where Shape has shapeType, svgstring, fill, stroke
 	return "", InvalidShapeHashError(shapeHash)
 }
 
 func (c CanvasStruct) GetInk() (inkRemaining uint32, err error) {
 	var ignoredreq = true
-	var ink uint32
-	err = c.MinerRPC.Call("MArtNode.GetInk", ignoredreq, &ink)
+	err = c.MinerRPC.Call("MArtNode.GetInk", ignoredreq, &inkRemaining)
 	if err != nil {
 		return 0, DisconnectedError(c.MinerAddr)
 	}
-	return ink, nil
+	return inkRemaining, nil
 }
 
 func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
-
-	return 1, nil
+	req := DeleteShapeReq{
+		ValidateNum: validateNum,
+		ShapeHash:   shapeHash}
+	err = c.MinerRPC.Call("MArtNode.DeleteShape", req, &inkRemaining)
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[SHAPEOWNERERROR]) {
+			return 0, ShapeOwnerError(shapeHash)
+		}
+		return 0, DisconnectedError(c.MinerAddr)
+	}
+	return inkRemaining, nil
 }
 
 func (c CanvasStruct) GetShapes(blockHash string) (shapeHashes []string, err error) {
-
-	return []string{""}, nil
+	err = c.MinerRPC.Call("MArtNode.GetShapes", blockHash, &shapeHashes)
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
+			return []string{""}, InvalidBlockHashError(blockHash)
+		}
+		return []string{""}, DisconnectedError(c.MinerAddr)
+	}
+	return shapeHashes, nil
 }
 
 func (c CanvasStruct) GetGenesisBlock() (blockHash string, err error) {
-
-	return "", nil
+	var ignoredreq = true
+	err = c.MinerRPC.Call("MArtNode.GetGenesisBlock", ignoredreq, &blockHash)
+	if err != nil {
+		return "", DisconnectedError(c.MinerAddr)
+	}
+	return blockHash, nil
 }
 
 func (c CanvasStruct) GetChildren(blockHash string) (blockHashes []string, err error) {
-
-	return []string{""}, nil
+	err = c.MinerRPC.Call("MArtNode.GetChildren", blockHash, &blockHashes)
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
+			return []string{""}, InvalidBlockHashError(blockHash)
+		}
+		return []string{""}, DisconnectedError(c.MinerAddr)
+	}
+	return blockHashes, nil
 }
 
 func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
@@ -327,7 +371,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 
 	canvasStruct := CanvasStruct{MinerRPC: minerRPC, MinerAddr: minerAddr}
 	if err != nil {
-		if strings.EqualFold(err.Error(), errorName[INVALIDPRIVKEY]) {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDPRIVKEY]) {
 			return nil, canvasSettings, InvalidPrivKey(InvalidPrivKey{})
 		}
 		return nil, canvasSettings, DisconnectedError(minerAddr)
