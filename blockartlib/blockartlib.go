@@ -197,38 +197,3 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	// For now return DisconnectedError
 	return nil, CanvasSettings{}, DisconnectedError("")
 }
-
-// Validate SVG Path String ("M 0 0 L 0 5")
-// Returns the following errors:
-// - ShapeSVGStringTooLongError
-// - InvalidShapeSvgStringError
-// https://github.com/dfcreative/is-svg-path/blob/master/index.js
-func validateShapeSVGString(shapeSvgString string) error {
-	if len(shapeSvgString) > 128 {
-		return ShapeSvgStringTooLongError(shapeSvgString)
-	}
-
-	return nil
-}
-
-// Returns the ink required to draw a svg path
-func calculateInkRequired() uint32 {
-	return nil
-}
-
-// Returns true if the given svg path goes out of the bounds of the canvas
-func checkOutOfBounds(shapeSvgString string) bool {
-
-}
-
-
-// Return true if shape overlaps/intersects with a shape that was added
-// previous by ANOTHER application, but not this application
-func checkOverlap(shapeSvgString string) bool {
-
-}
-
-// Convert a SVG path string to list of x and y points
-func convertPathToPoints(shapeSvgString string) ([]int, []int) {
-
-}
