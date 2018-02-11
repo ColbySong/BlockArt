@@ -216,7 +216,7 @@ func (m InkMiner) startMiningBlocks() {
 // Mine a single block that includes a set of operations.
 func (m InkMiner) computeBlock() *blockchain.Block {
 	defer pendingOperations.Unlock()
-	
+
 	var nonce uint32 = FirstNonce
 	for {
 		pendingOperations.Lock()
@@ -262,6 +262,8 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 // Broadcast the newly-mined block to the miner network
 func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
 	// TODO - stub
+	// TODO - clear ops that are included in this block, but only if confident that they
+	// TODO   will be part of the main chain
 	return nil
 }
 
