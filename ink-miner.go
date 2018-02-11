@@ -311,19 +311,19 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDPRIVKEY]) // TODO: return error if priv keys do not match???
 }
 
-func (a *MArtNode) AddShape(shape blockartlib.Shape, newShapeResp *blockartlib.NewShapeResponse) error {
+func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
 	// check ink level
 	// check valid svg str and svg str length
 	// check shape overlap err (same app ok?)
 	// check canvas outofbounds err
 
-	_, err := util.ValidateShapeSVGString(shape.SvgString) // TODO: change err handling in util?
+	_, err := util.ValidateShapeSVGString(shapeRequest.SvgString) // TODO: change err handling in util?
 	if err != nil {
 		//check errors
 	}
 
 	inkRemaining := uint32(0) // stub
-	svgPath, err := util.ConvertPathToPoints(shape.SvgString)
+	svgPath, err := util.ConvertPathToPoints(shapeRequest.SvgString)
 	isTransparent := false //use shape.Fill and check transparency
 	isClosed := false      // use shape.Stroke and check if closed
 	inkRequired := util.CalculateInkRequired(svgPath, isTransparent, isClosed)

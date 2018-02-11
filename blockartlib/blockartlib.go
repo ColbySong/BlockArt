@@ -243,6 +243,14 @@ type DeleteShapeReq struct {
 	ShapeHash   string
 }
 
+type AddShapeRequest struct {
+	ValidateNum uint8
+	ShapeType ShapeType
+	SvgString string
+	Fill      string
+	Stroke    string
+}
+
 type Shape struct {
 	ShapeType ShapeType
 	SvgString string
@@ -252,14 +260,15 @@ type Shape struct {
 
 func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
 
-	shape := Shape{
+	addShapeRequest := AddShapeRequest{
+		ValidateNum: validateNum,
 		ShapeType: shapeType,
 		SvgString: shapeSvgString,
 		Fill:      fill,
 		Stroke:    stroke}
 
 	resp := NewShapeResponse{}
-	err = c.MinerRPC.Call("MArtNode.AddShape", shape, &resp)
+	err = c.MinerRPC.Call("MArtNode.AddShape", addShapeRequest, &resp)
 	if err != nil {
 		switch errorStr := err.Error(); errorStr {
 		case ErrorName[INSUFFICIENTINK]:
