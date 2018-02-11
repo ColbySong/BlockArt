@@ -157,6 +157,7 @@ type ErrorEnum int
 
 const (
 	INSUFFICIENTINK ErrorEnum = iota
+	INVALIDSHAPEHASH
 	INVALIDSHAPESVGSTRING
 	SHAPESVGSTRINGTOOLONG
 	SHAPEOVERLAP
@@ -168,6 +169,7 @@ const (
 
 var ErrorName = []string{
 	INSUFFICIENTINK:       "INSUFFICIENTINK",
+	INVALIDSHAPEHASH:      "INVALIDSHAPEHASH",
 	INVALIDSHAPESVGSTRING: "INVALIDSHAPESVGSTRING",
 	SHAPESVGSTRINGTOOLONG: "SHAPESVGSTRINGTOOLONG",
 	SHAPEOVERLAP:          "SHAPEOVERLAP",
@@ -282,6 +284,12 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 
 func (c CanvasStruct) GetSvgString(shapeHash string) (svgString string, err error) {
 	err = c.MinerRPC.Call("MArtNode.GetSvgString", shapeHash, &svgString)
+
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDSHAPEHASH]) {
+			return "", InvalidShapeHashError(shapeHash)
+		}
+	}
 	//TODO: miner side: implement map[shapeHash]Shape where Shape has shapeType, svgstring, fill, stroke
 	return "", InvalidShapeHashError(shapeHash)
 }
@@ -310,7 +318,8 @@ func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemai
 }
 
 func (c CanvasStruct) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	err = c.MinerRPC.Call("MArtNode.GetShapes", blockHash, &shapeHashes)
+	// TODO: init shapeHashes string array?
+	err = c.MinerRPC.Call("MArtNode.GetShapes", blockHash, shapeHashes)
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
 			return []string{""}, InvalidBlockHashError(blockHash)
@@ -330,7 +339,8 @@ func (c CanvasStruct) GetGenesisBlock() (blockHash string, err error) {
 }
 
 func (c CanvasStruct) GetChildren(blockHash string) (blockHashes []string, err error) {
-	err = c.MinerRPC.Call("MArtNode.GetChildren", blockHash, &blockHashes)
+	// TODO: init blockHashes string array?
+	err = c.MinerRPC.Call("MArtNode.GetChildren", blockHash, blockHashes)
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
 			return []string{""}, InvalidBlockHashError(blockHash)
