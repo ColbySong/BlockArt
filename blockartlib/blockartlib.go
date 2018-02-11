@@ -323,7 +323,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 
 	canvasSettings := CanvasSettings{}
 	err = minerRPC.Call("MArtNode.registerArtNode", privKey, canvasSettings)
-	handleError("Could not connect to miner", err)
+	handleError("Could not connect to miner", err) //TODO: should we make this an error we return?
 
 	canvasStruct := CanvasStruct{MinerRPC: minerRPC, MinerAddr: minerAddr}
 	if err != nil {
