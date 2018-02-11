@@ -134,10 +134,16 @@ func (e ShapeOverlapError) Error() string {
 type InvalidBlockHashError string
 
 func (e InvalidBlockHashError) Error() string {
-	return fmt.Sprintf("BlockArt: The given miner private key does not match [%s]", string(e))
+	return fmt.Sprintf("BlockArt: Invalid block hash [%s]", string(e))
+
 }
 
 // </ERROR DEFINITIONS>
+type InvalidPrivKey struct{}
+
+func (e InvalidPrivKey) Error() string {
+	return fmt.Sprintf("BlockArt: The given miner private key does not match [%s]", string(e))
+}
 
 // CUSTOM ERROR DEFINITIONS
 type ErrorEnum int
@@ -316,6 +322,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 
 	canvasSettings := CanvasSettings{}
 	err = minerRPC.Call("MArtNode.registerArtNode", privKey, canvasSettings)
+	handleError("Could not connect to miner", err)
 
 	canvasStruct := CanvasStruct{MinerRPC: minerRPC, MinerAddr: minerAddr}
 	if err != nil {
@@ -326,4 +333,10 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	}
 
 	return canvasStruct, canvasSettings, nil
+}
+
+func handleError(msg string, e error) {
+	if e != nil {
+		errLog.Fatalf("%s, err = %s\n", msg, e.Error())
+	}
 }
