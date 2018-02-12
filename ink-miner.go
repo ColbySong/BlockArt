@@ -472,7 +472,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	// block := a.inkMiner.computeBlock()
 
 	// TODO: ping to see if validated according to validateNum
-	blockHash := a.inkMiner.blockChain.NewestHash
+	blockHash := blockChain.NewestHash
 
 	newShapeResp.ShapeHash = shapeHash
 	newShapeResp.BlockHash = blockHash
@@ -483,9 +483,9 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 	outLog.Printf("Reached GetSvgString\n")
 
-	newestHash := a.inkMiner.blockChain.NewestHash
-	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = a.inkMiner.blockChain.Blocks[blockHash].PrevHash {
-		block := a.inkMiner.blockChain.Blocks[blockHash]
+	newestHash := blockChain.NewestHash
+	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
+		block := blockChain.Blocks[blockHash]
 		if opRecord, ok := block.OpRecords[shapeHash]; ok {
 			*svgString = opRecord.Op
 			return nil
@@ -511,9 +511,9 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 	// and check if is owner (matching pub key)
 	// then wait for validationNum to be fulfilled
 
-	newestHash := a.inkMiner.blockChain.NewestHash
-	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = a.inkMiner.blockChain.Blocks[blockHash].PrevHash {
-		block := a.inkMiner.blockChain.Blocks[blockHash]
+	newestHash := blockChain.NewestHash
+	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
+		block := blockChain.Blocks[blockHash]
 		if opRecord, ok := block.OpRecords[deleteShapeReq.ShapeHash]; ok {
 			if reflect.DeepEqual(opRecord.AuthorPubKey, a.inkMiner.pubKey) {
 				a.inkMiner.broadcastNewOperation(*opRecord)
@@ -535,9 +535,9 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 
 func getInkTraversal(a *MArtNode) int {
 	inkRemaining := 0
-	newestHash := a.inkMiner.blockChain.NewestHash
-	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = a.inkMiner.blockChain.Blocks[blockHash].PrevHash {
-		block := a.inkMiner.blockChain.Blocks[blockHash]
+	newestHash := blockChain.NewestHash
+	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
+		block := blockChain.Blocks[blockHash]
 		if len(block.OpRecords) == 0 { // NoOp block
 			if reflect.DeepEqual(block.MinerPubKey, a.inkMiner.pubKey) {
 				inkRemaining += int(a.inkMiner.settings.InkPerNoOpBlock)
