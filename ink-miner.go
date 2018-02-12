@@ -103,7 +103,9 @@ func main() {
 	settings := miner.register()
 	miner.settings = &settings
 
+	blockChain.Lock()
 	blockChain.NewestHash = settings.GenesisBlockHash
+	blockChain.Unlock()
 
 	go miner.startSendingHeartbeats()
 	go miner.maintainMinerConnections()
@@ -191,6 +193,10 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // 3) If block number is greater than local blockchain's latest block number
 // Otherwise, do not disseminate
 func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
+	// TODO: May need to change locking semantics
+	blockChain.Lock()
+	defer blockChain.Unlock()
+
 	newestHash := blockChain.NewestHash
 	newestBlock := blockChain.Blocks[newestHash]
 
@@ -261,6 +267,11 @@ func (m InkMiner) sendHeartBeat() {
 
 func (m InkMiner) startMiningBlocks() {
 	for {
+		// Lock entire blockchain while computing hash so that if you receive
+		// disseminated blocks from other miners, you don't update the blockchain
+		// while computing current hash
+		blockChain.Lock()
+
 		block := m.computeBlock()
 
 		hash := computeBlockHash(*block)
@@ -268,6 +279,8 @@ func (m InkMiner) startMiningBlocks() {
 		blockChain.NewestHash = hash
 
 		m.broadcastNewBlock(block)
+
+		blockChain.Unlock()
 	}
 }
 
@@ -431,6 +444,8 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 	outLog.Printf("Reached GetShapes\n")
 	// TODO: Can each key (blockhash) have more than 1 blocks??
+	blockChain.RLock()
+	defer blockChain.RUnlock()
 
 	if block, ok := blockChain.Blocks[blockHash]; ok {
 		shapeHashes := make([]string, len(block.OpRecords))

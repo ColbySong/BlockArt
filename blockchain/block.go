@@ -1,6 +1,9 @@
 package blockchain
 
-import "crypto/ecdsa"
+import (
+	"crypto/ecdsa"
+	"sync"
+)
 
 // todo - include ink level of every miner in the network
 // todo - include all shapes on the canvas
@@ -19,6 +22,7 @@ type OpRecord struct {
 }
 
 type BlockChain struct {
+	sync.RWMutex
 	Blocks     map[string]*Block // Map of block hashes to blocks
 	NewestHash string            // The tip of the longest branch
 }
