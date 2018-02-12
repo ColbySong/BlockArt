@@ -221,11 +221,44 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 		return nil
 	} else if block.BlockNum > newestBlock.BlockNum+1 {
 		// TODO: Receieved a block with block number greater than the one miner is currently mining
-		// TODO: Fetch entire blockchain from neighbours?
+
+		// neighbourBlockChains := getBlockChainFromNeighbours()
+
+		// TODO: process block chains and pick best to go off of
+
 	} else {
 		// TODO: Received a block with block number less than the one miner is currently mining
 		//       Save it anyway,
 	}
+
+	return nil
+}
+
+func getBlockChainFromNeighbours() []*blockchain.BlockChain {
+	var bcs []*blockchain.BlockChain
+
+	connectedMiners.Lock()
+	for _, minerAddr := range connectedMiners.all {
+		miner, err := rpc.Dial("tcp", minerAddr.String())
+		handleError("Could not dial miner: "+minerAddr.String(), err)
+
+		var resp blockchain.BlockChain
+		err = miner.Call("MServer.GetBlockChain", nil, &resp)
+		handleError("Could not call RPC method: MServer.GetBlockChain", err)
+
+		bcs = append(bcs, &resp)
+	}
+	connectedMiners.Unlock()
+
+	return bcs
+}
+
+// Return entire block chain
+func (s *MServer) GetBlockChain(_ignore bool, bc *blockchain.BlockChain) error {
+	blockChain.RLock()
+	defer blockChain.RUnlock()
+
+	*bc = blockChain
 
 	return nil
 }
@@ -340,14 +373,14 @@ func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
 }
 
 func sendToAllConnectedMiners(remoteProcedure string, payload interface{}) {
-	connectedMiners.Lock()
+	connectedMiners.RLock()
 	for _, minerAddr := range connectedMiners.all {
 		miner, err := rpc.Dial("tcp", minerAddr.String())
 		handleError("Could not dial miner: "+minerAddr.String(), err)
 		err = miner.Call(remoteProcedure, payload, nil)
 		handleError("Could not call RPC method: "+remoteProcedure, err)
 	}
-	connectedMiners.Unlock()
+	connectedMiners.RUnlock()
 }
 
 // Compute the MD5 hash of a Block
