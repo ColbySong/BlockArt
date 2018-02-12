@@ -14,6 +14,7 @@ import (
 	"net/rpc"
 	"os"
 	"strings"
+	"../util"
 )
 
 var (
@@ -243,6 +244,16 @@ type DeleteShapeReq struct {
 	ShapeHash   string
 }
 
+type AddShapeRequest struct {
+	ValidateNum uint8
+	ShapeType ShapeType
+	SvgString string
+	Fill      string
+	Stroke    string
+	IsTransparent bool
+	IsClosed      bool
+}
+
 type Shape struct {
 	ShapeType ShapeType
 	SvgString string
@@ -251,25 +262,46 @@ type Shape struct {
 }
 
 func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
+	if shapeType != PATH {
+		return "", "", 0, InvalidShapeSvgStringError("Only PATH shape is supported")
+	}
 
-	shape := Shape{
+	// ValidateShapeSVGString will return the right type of error
+	if _, err := util.ValidateShapeSVGString(shapeSvgString); err != nil {
+		return "", "", 0, err
+	}
+
+	isTransparent := false
+	isClosed := false
+
+	if fill == "transparent" {
+		isTransparent = true
+	}
+
+	lastSVGChar := string(shapeSvgString[len(shapeSvgString) - 1])
+
+	if lastSVGChar == "Z" || lastSVGChar == "z" {
+		isClosed = true
+	}
+
+	addShapeRequest := AddShapeRequest{
+		ValidateNum: validateNum,
 		ShapeType: shapeType,
 		SvgString: shapeSvgString,
 		Fill:      fill,
-		Stroke:    stroke}
+		Stroke:    stroke,
+		IsTransparent: isTransparent,
+		IsClosed: isClosed,
+	}
 
 	resp := NewShapeResponse{}
-	err = c.MinerRPC.Call("MArtNode.AddShape", shape, &resp)
+	err = c.MinerRPC.Call("MArtNode.AddShape", addShapeRequest, &resp)
 	if err != nil {
 		switch errorStr := err.Error(); errorStr {
 		case ErrorName[INSUFFICIENTINK]:
 			return "", "", 0, InsufficientInkError(resp.InkRemaining)
 		case ErrorName[INVALIDSHAPESVGSTRING]:
-			return "", "", 0, InvalidShapeSvgStringError(shapeSvgString)
-		case ErrorName[INVALIDSHAPESVGSTRING]:
 			return "", "", 0, InsufficientInkError(resp.InkRemaining)
-		case ErrorName[SHAPESVGSTRINGTOOLONG]:
-			return "", "", 0, ShapeSvgStringTooLongError(shapeSvgString)
 		case ErrorName[SHAPEOVERLAP]:
 			return "", "", 0, ShapeOverlapError(resp.ShapeHash) //The returning shape hash is the overlapping one
 		case ErrorName[OUTOFBOUNDS]:

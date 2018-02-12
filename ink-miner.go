@@ -311,36 +311,38 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDPRIVKEY]) // TODO: return error if priv keys do not match???
 }
 
-func (a *MArtNode) AddShape(shape blockartlib.Shape, newShapeResp *blockartlib.NewShapeResponse) error {
-	// check ink level
-	// check valid svg str and svg str length
-	// check shape overlap err (same app ok?)
-	// check canvas outofbounds err
+func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
+	inkRemaining := uint32(0) // TODO: get how much ink the miner has
+	requestedSVGPath, _ := util.ConvertPathToPoints(shapeRequest.SvgString)
+	isTransparent := shapeRequest.IsTransparent
+	isClosed := shapeRequest.IsClosed
 
-	_, err := util.ValidateShapeSVGString(shape.SvgString) // TODO: change err handling in util?
-	if err != nil {
-		//check errors
+	// check if shape is in bound
+	canvasSettings := a.inkMiner.settings.CanvasSettings
+	if isOutOfBounds := util.CheckOutOfBounds(requestedSVGPath, canvasSettings.CanvasXMax, canvasSettings.CanvasYMax); isOutOfBounds {
+		return errors.New(blockartlib.ErrorName[blockartlib.OUTOFBOUNDS])
 	}
 
-	inkRemaining := uint32(0) // stub
-	svgPath, err := util.ConvertPathToPoints(shape.SvgString)
-	isTransparent := false //use shape.Fill and check transparency
-	isClosed := false      // use shape.Stroke and check if closed
-	inkRequired := util.CalculateInkRequired(svgPath, isTransparent, isClosed)
+	// check if shape overlaps with shapes from OTHER application
+	// TODO: need a way to get all the current shapes on canvas excluding its own shapes
+	currentSVGStringsOnCanvas := []string{} // TODO: requires a list of SVG strings that are currently on the canvas in the form of "M 0 10 H 20"
+	for _, svgPathString := range currentSVGStringsOnCanvas {
+		svgPath, _ := util.ConvertPathToPoints(svgPathString)
+		if util.CheckOverlap(svgPath, requestedSVGPath) {
+			return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOVERLAP])
+		}
+	}
+
+	// if shape is inbound and does not overlap, then calculate the ink required
+	inkRequired := util.CalculateInkRequired(requestedSVGPath, isTransparent, isClosed)
 	if inkRequired < inkRemaining {
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 
-	canvasSettings := a.inkMiner.settings.CanvasSettings
-	if isOutOfBounds := util.CheckOutOfBounds(svgPath, canvasSettings.CanvasXMax, canvasSettings.CanvasYMax); isOutOfBounds {
-		return errors.New(blockartlib.ErrorName[blockartlib.OUTOFBOUNDS])
-	}
-
-	// check overlap with other shapes in block
 
 	// TODO: add to pending operations? call to create block??
-
 	// populate NewShapeResponse struct with shapeHash, blockHash and inkRemaining
+	// TODO: MINER MUST USE VALIDATENUM AND ONLY RETURN THE SHAPEHASH AND BLOCKHASH WHEN VALIDATE NUM IS SATISFIED
 
 	return nil
 }
