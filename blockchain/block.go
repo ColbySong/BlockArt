@@ -5,8 +5,6 @@ import (
 	"sync"
 )
 
-// todo - include ink level of every miner in the network
-// todo - include all shapes on the canvas
 type Block struct {
 	BlockNum    uint32
 	PrevHash    string // MD5 hash of [prevHash, opSig, minerPubKey, nonce]
