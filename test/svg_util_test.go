@@ -1,4 +1,4 @@
-package util_test
+package test
 
 import (
 	"../util"
@@ -122,11 +122,11 @@ func TestCalculateInkRequired(t *testing.T) {
 }
 
 func TestCheckOutOfBounds(t *testing.T) {
-	if util.CheckOutOfBounds(rightAngleTriangle, 1000, 1000) {
+	if err := util.CheckOutOfBounds(rightAngleTriangle, 1000, 1000); err != nil {
 		t.Error("Path are within bound but got out of bounds")
 	}
 
-	if !util.CheckOutOfBounds(rightAngleTriangle, 100, 100) {
+	if err := util.CheckOutOfBounds(rightAngleTriangle, 100, 100); err == nil {
 		t.Error("Path are out of bounds but got within bounds ")
 	}
 }
@@ -137,22 +137,22 @@ func TestCheckOverLap(t *testing.T) {
 	noIntersect := util.SVGPathCoordinates{ XCords: []int{150, 50}, YCords: []int{90, 90} }
 
 	// Two lines that intersect
-	if !util.CheckOverlap(simpleLine, intersectsSimpleLine) {
+	if err := util.CheckOverlap(simpleLine, intersectsSimpleLine); err == nil {
 		t.Error("The two path over laps but got that they don't")
 	}
 
 	// Two lines that don't intersect
-	if util.CheckOverlap(simpleLine, noIntersect) {
+	if err := util.CheckOverlap(simpleLine, noIntersect); err != nil {
 		t.Error("The two path DO NOT over laps but got that they do")
 	}
 
 	// Two squares that overlap
-	if !util.CheckOverlap(regularAssSquare, squareThatOverlapsRegularAssSquare) {
+	if err := util.CheckOverlap(regularAssSquare, squareThatOverlapsRegularAssSquare); err == nil {
 		t.Error("The two path over laps but got that they don't")
 	}
 
 	// Two squares that don't overlap
-	if util.CheckOverlap(regularAssSquare, squareThatDoesntOverLap) {
+	if err := util.CheckOverlap(regularAssSquare, squareThatDoesntOverLap); err != nil {
 		t.Error("The two path DO NOT over laps but got that they do")
 	}
 
