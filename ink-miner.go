@@ -186,7 +186,37 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // 3) If block number is greater than local blockchain's latest block number
 // Otherwise, do not disseminate
 func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
-	// TODO: Verify, update, and disseminate block
+	blockChain := s.inkMiner.blockChain
+	newestHash := blockChain.NewestHash
+	newestBlock := blockChain.Blocks[newestHash]
+
+	blockHash := computeBlockHash(block)
+
+	if block.BlockNum == newestBlock.BlockNum+1 {
+		// Receieved a block with block number equal to the one miner is currently mining
+
+		// Block's PrevHash matches newest block's PrevHash, add to block chain and disseminate
+		if block.PrevHash == newestHash {
+			// TODO: Verify block's operations, if not valid, stop and don't disseminate
+
+			blockChain.Blocks[blockHash] = &block
+			blockChain.NewestHash = blockHash
+			sendToAllConnectedMiners("MServer.DisseminateBlock", block)
+		} else {
+			// TODO: What should we do if block.PrevHash != newestHash?
+			//       Save it anyway incase it becomes longest, don't work off it, and don't disseminate?
+			//       But if the PrevHash doesn't match, then it won't be valid in the miner's local blockchain
+		}
+
+		return nil
+	} else if block.BlockNum > newestBlock.BlockNum+1 {
+		// TODO: Receieved a block with block number greater than the one miner is currently mining
+		// TODO: Fetch entire blockchain from neighbours?
+	} else {
+		// TODO: Received a block with block number less than the one miner is currently mining
+		//       Save it anyway,
+	}
+
 	return nil
 }
 
