@@ -18,6 +18,7 @@ type Block struct {
 type OpRecord struct {
 	Op           string
 	OpSig        string // signed with private key of art node
+	InkUsed      uint32
 	AuthorPubKey ecdsa.PublicKey
 }
 
