@@ -14,6 +14,7 @@ import (
 	"net/rpc"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,6 +39,11 @@ type ConnectedMiners struct {
 type PendingOperations struct {
 	sync.RWMutex
 	all map[string]*blockchain.OpRecord
+}
+
+type ShapeHashStruct struct {
+	ShapeSvgPath string
+	PrivKey      ecdsa.PrivateKey
 }
 
 type InkMiner struct {
@@ -153,7 +159,8 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 
 	if _, exists := pendingOperations.all[op.OpSig]; !exists {
 		// Add operation to pending transaction
-		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.AuthorPubKey}
+		// TODO : get ink for op
+		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.InkUsed, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
@@ -171,7 +178,8 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
 
 	if _, exists := pendingOperations.all[op.OpSig]; !exists {
 		// Add operation to pending transaction
-		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.AuthorPubKey}
+		// TODO : get ink for op
+		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.InkUsed, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
@@ -376,23 +384,19 @@ func computeBlockHash(block blockchain.Block) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-// Compute the MD5 hash of a Shape
-func computeShapeHash(shapeSvgPath string, privKey ecdsa.PrivateKey) string {
-	type ShapeHashStruct struct {
-		ShapeSvgPath string
-		PrivKey      ecdsa.PrivateKey
-	}
-
-	shapeHashStruct := ShapeHashStruct{
-		ShapeSvgPath: shapeSvgPath,
-		PrivKey:      privKey}
-
+// Compute the RSA-SHA hash of a Shape
+func computeShapeHash(shapeHashStruct ShapeHashStruct) string {
 	bytes, err := json.Marshal(shapeHashStruct)
 	handleError("Could not marshal shape svg path to JSON", err)
 
 	hash := md5.New()
 	hash.Write(bytes)
 	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func decodeShapeHash(shapeHash string, pubKey ecdsa.PublicKey) bool {
+	//TODO: unsign hash with pub key. Get back true if pub key corresponds to priv key
+	return false
 }
 
 // Verify that a hash ends with some number of zeros
@@ -449,7 +453,13 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
 
 	// Create svg hash
-	shapeHash := computeShapeHash(shapeSvgPathString, *a.inkMiner.privKey)
+
+	shapeHashStruct := ShapeHashStruct{
+		ShapeSvgPath: shapeSvgPathString,
+		PrivKey:      *a.inkMiner.privKey,
+	}
+
+	shapeHash := computeShapeHash(shapeHashStruct)
 
 	opRecord := blockchain.OpRecord{
 		Op:           shapeSvgPathString, //should this be the full html path?
@@ -486,8 +496,11 @@ func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 
 func (a *MArtNode) GetInk(ignoredreq bool, inkRemaining *uint32) error {
 	outLog.Printf("Reached GetInk\n")
-	// TODO: inkRemaining, an attribute in InkMiner struct? or get info
-	// by looking thru entire blockchain..
+	ink := getInkTraversal()
+	if ink < 0 {
+		fmt.Printf("Get ink got back negative ink %d", *inkRemaining)
+	}
+	*inkRemaining = uint32(ink)
 	return nil
 }
 
@@ -503,7 +516,7 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 		block := a.inkMiner.blockChain.Blocks[blockHash]
 		if opRecord, ok := block.OpRecords[deleteShapeReq.ShapeHash]; ok {
 			if reflect.DeepEqual(opRecord.AuthorPubKey, a.inkMiner.pubKey) {
-				a.inkMiner.broadcastNewOperation(opRecordToDelete)
+				a.inkMiner.broadcastNewOperation(*opRecord)
 				block := a.inkMiner.computeBlock()
 
 				// TODO: ping to see if validated according to validateNum
@@ -513,12 +526,45 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 
 				return nil
 			}
-
-			break //TODO: should we stop if shapeHash is equal even if public key doesn't match? chances of this?
+			break
 		}
 	}
 
 	return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOWNER])
+}
+
+func getInkTraversal() int {
+	inkRemaining := 0
+	newestHash := a.inkMiner.blockChain.NewestHash
+	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = a.inkMiner.blockChain.Blocks[blockHash].PrevHash {
+		block := a.inkMiner.blockChain.Blocks[blockHash]
+		if len(block.OpRecords) == 0 { // NoOp block
+			if reflect.DeepEqual(block.MinerPubKey, a.inkMiner.pubKey) {
+				inkRemaining += a.inkMiner.settings.InkPerNoOpBlock
+			}
+
+		} else { // Op Block
+			if reflect.DeepEqual(block.MinerPubKey, a.inkMiner.pubKey) {
+				inkRemaining += a.inkMiner.settings.InkPerOpBlock
+				for _, opRecord := range block.OpRecords {
+					if reflect.DeepEqual(opRecord.AuthorPubKey, a.inkMiner.pubKey) {
+						if isOpDelete(opRecord.Op) { // Delete block
+							inkRemaining += opRecord.InkUsed
+						} else { // Add block
+							inkRemaining -= opRecord.InkUsed
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return inkRemaining
+}
+
+func isOpDelete(shapeSvgHashString string) bool {
+	buf := strings.split(shapeSvgHashString, " ")
+	return strings.EqualFold(buf[0], "delete")
 }
 
 func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
@@ -530,8 +576,8 @@ func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 	if block, ok := blockChain.Blocks[blockHash]; ok {
 		shapeHashes := make([]string, len(block.OpRecords))
 		var i = 0
-		for hash := range block.OpRecords {
-			shapeHashes[i] = hash
+		for opRecord := range block.OpRecords {
+			shapeHashes[i] = opRecord.Op
 			i++
 		}
 		return nil
