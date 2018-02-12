@@ -10,8 +10,3 @@ type MinerInfo struct {
 	Address net.Addr
 	Key     ecdsa.PublicKey
 }
-
-type Operation struct {
-	Op   string
-	Hash string
-}
