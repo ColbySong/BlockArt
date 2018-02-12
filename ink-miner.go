@@ -41,12 +41,11 @@ type PendingOperations struct {
 }
 
 type InkMiner struct {
-	addr       net.Addr
-	server     *rpc.Client
-	pubKey     *ecdsa.PublicKey
-	privKey    *ecdsa.PrivateKey
-	settings   *blockartlib.MinerNetSettings
-	blockChain *blockchain.BlockChain
+	addr     net.Addr
+	server   *rpc.Client
+	pubKey   *ecdsa.PublicKey
+	privKey  *ecdsa.PrivateKey
+	settings *blockartlib.MinerNetSettings
 }
 
 type MServer struct {
@@ -61,6 +60,7 @@ var (
 	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	connectedMiners               = ConnectedMiners{all: make([]net.Addr, 0, 0)}
 	pendingOperations             = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
+	blockChain                    = blockchain.BlockChain{Blocks: make(map[string]*blockchain.Block)}
 )
 
 // Start the miner.
@@ -92,23 +92,20 @@ func main() {
 
 	inbound, err := net.ListenTCP("tcp", addr)
 
-	bc := &blockchain.BlockChain{
-		Blocks: make(map[string]*blockchain.Block),
-	}
-
 	// Create InkMiner instance
 	miner := &InkMiner{
-		addr:       inbound.Addr(),
-		server:     server,
-		pubKey:     &pub,
-		privKey:    priv,
-		blockChain: bc,
+		addr:    inbound.Addr(),
+		server:  server,
+		pubKey:  &pub,
+		privKey: priv,
 	}
 
 	settings := miner.register()
 	miner.settings = &settings
 
-	miner.blockChain.NewestHash = settings.GenesisBlockHash
+	blockChain.Lock()
+	blockChain.NewestHash = settings.GenesisBlockHash
+	blockChain.Unlock()
 
 	go miner.startSendingHeartbeats()
 	go miner.maintainMinerConnections()
@@ -196,7 +193,10 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // 3) If block number is greater than local blockchain's latest block number
 // Otherwise, do not disseminate
 func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
-	blockChain := s.inkMiner.blockChain
+	// TODO: May need to change locking semantics
+	blockChain.Lock()
+	defer blockChain.Unlock()
+
 	newestHash := blockChain.NewestHash
 	newestBlock := blockChain.Blocks[newestHash]
 
@@ -211,7 +211,7 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 
 			blockChain.Blocks[blockHash] = &block
 			blockChain.NewestHash = blockHash
-			sendToAllConnectedMiners("MServer.DisseminateBlock", block)
+			// sendToAllConnectedMiners("MServer.DisseminateBlock", block)
 		} else {
 			// TODO: What should we do if block.PrevHash != newestHash?
 			//       Save it anyway incase it becomes longest, don't work off it, and don't disseminate?
@@ -267,13 +267,20 @@ func (m InkMiner) sendHeartBeat() {
 
 func (m InkMiner) startMiningBlocks() {
 	for {
+		// Lock entire blockchain while computing hash so that if you receive
+		// disseminated blocks from other miners, you don't update the blockchain
+		// while computing current hash
+		blockChain.Lock()
+
 		block := m.computeBlock()
 
 		hash := computeBlockHash(*block)
-		m.blockChain.Blocks[hash] = block
-		m.blockChain.NewestHash = hash
+		blockChain.Blocks[hash] = block
+		blockChain.NewestHash = hash
 
 		m.broadcastNewBlock(block)
+
+		blockChain.Unlock()
 	}
 }
 
@@ -297,15 +304,15 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 
 		var nextBlockNum uint32
 
-		if len(m.blockChain.Blocks) == 0 {
+		if len(blockChain.Blocks) == 0 {
 			nextBlockNum = FirstBlockNum
 		} else {
-			nextBlockNum = m.blockChain.Blocks[m.blockChain.NewestHash].BlockNum + 1
+			nextBlockNum = blockChain.Blocks[blockChain.NewestHash].BlockNum + 1
 		}
 
 		block := &blockchain.Block{
 			BlockNum:    nextBlockNum,
-			PrevHash:    m.blockChain.NewestHash,
+			PrevHash:    blockChain.NewestHash,
 			OpRecords:   pendingOperations.all,
 			MinerPubKey: m.pubKey,
 			Nonce:       nonce,
@@ -328,7 +335,7 @@ func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
 	// TODO - stub
 	// TODO - clear ops that are included in this block, but only if confident that they
 	// TODO   will be part of the main chain
-	sendToAllConnectedMiners("MServer.DisseminateBlock", *block)
+	// sendToAllConnectedMiners("MServer.DisseminateBlock", *block)
 	return nil
 }
 
@@ -437,8 +444,10 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 	outLog.Printf("Reached GetShapes\n")
 	// TODO: Can each key (blockhash) have more than 1 blocks??
+	blockChain.RLock()
+	defer blockChain.RUnlock()
 
-	if block, ok := a.inkMiner.blockChain.Blocks[blockHash]; ok {
+	if block, ok := blockChain.Blocks[blockHash]; ok {
 		shapeHashes := make([]string, len(block.OpRecords))
 		var i = 0
 		for hash := range block.OpRecords {
