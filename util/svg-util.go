@@ -38,7 +38,7 @@ type Point struct {
 	yCord int
 }
 
-func CreateSvgPathString(shapeSvgString string, stroke string, fill string) string {
+func ConvertToSvgPathString(shapeSvgString string, stroke string, fill string) string {
 	var buf bytes.Buffer
 	buf.WriteString("<path d=")
 	buf.WriteString("\"")
