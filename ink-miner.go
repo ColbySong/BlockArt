@@ -161,10 +161,26 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 
 		// Send operation to all connected miners
 		sendToAllConnectedMiners("MServer.DisseminateOperation", op)
-
 		return nil
 	}
+	pendingOperations.Unlock()
 
+	return nil
+}
+
+// Broadcast the new operation
+func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
+	pendingOperations.Lock()
+
+	if _, exists := pendingOperations.all[op.OpSig]; !exists {
+		// Add operation to pending transaction
+		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.AuthorPubKey}
+		pendingOperations.Unlock()
+
+		// Send operation to all connected miners
+		sendToAllConnectedMiners("MServer.DisseminateOperation", op)
+		return nil
+	}
 	pendingOperations.Unlock()
 
 	return nil
@@ -353,6 +369,25 @@ func computeBlockHash(block blockchain.Block) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
+// Compute the MD5 hash of a Shape
+func computeShapeHash(shapeSvgPath string, privKey ecdsa.PrivateKey) string {
+	type ShapeHashStruct struct {
+		ShapeSvgPath string
+		PrivKey      ecdsa.PrivateKey
+	}
+
+	shapeHashStruct := ShapeHashStruct{
+		ShapeSvgPath: shapeSvgPath,
+		PrivKey:      privKey}
+
+	bytes, err := json.Marshal(shapeHashStruct)
+	handleError("Could not marshal shape svg path to JSON", err)
+
+	hash := md5.New()
+	hash.Write(bytes)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
 // Verify that a hash ends with some number of zeros
 func verifyTrailingZeros(hash string, numZeros uint8) bool {
 	for i := uint8(0); i < numZeros; i++ {
@@ -403,16 +438,42 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 
-	// TODO: add to pending operations? call to create block??
-	// populate NewShapeResponse struct with shapeHash, blockHash and inkRemaining
-	// TODO: MINER MUST USE VALIDATENUM AND ONLY RETURN THE SHAPEHASH AND BLOCKHASH WHEN VALIDATE NUM IS SATISFIED
+	// create svg path
+	shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
 
+	// Create svg hash
+	shapeHash := computeShapeHash(shapeSvgPathString, *a.inkMiner.privKey)
+
+	opRecord := blockchain.OpRecord{
+		Op:           shapeSvgPathString, //should this be the full html path?
+		OpSig:        shapeHash,
+		InkUsed:      inkRequired,
+		AuthorPubKey: *a.inkMiner.pubKey}
+
+	a.inkMiner.broadcastNewOperation(opRecord)
+
+	block := a.inkMiner.computeBlock()
+
+	// TODO: ping to see if validated according to validateNum
+	blockHash := a.inkMiner.blockChain.NewestHash
+
+	newShapeResp.ShapeHash = shapeHash
+	newShapeResp.BlockHash = blockHash
+	newShapeResp.InkRemaining = 0 // call get ink?
 	return nil
 }
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 	outLog.Printf("Reached GetSvgString\n")
-	// TODO: traverse blockchain to get svgstring by shapehash
+
+	newestHash := a.inkMiner.blockChain.NewestHash
+	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = a.inkMiner.blockChain.Blocks[blockHash].PrevHash {
+		block := a.inkMiner.blockChain.Blocks[blockHash]
+		if opRecord, ok := block.OpRecords[shapeHash]; ok {
+			*svgString = opRecord.Op
+			return nil
+		}
+	}
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDSHAPEHASH])
 }
 
@@ -430,8 +491,27 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 	// and check if is owner (matching pub key)
 	// then wait for validationNum to be fulfilled
 
-	//return ShapeOwnerErr
-	return nil
+	newestHash := a.inkMiner.blockChain.NewestHash
+	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = a.inkMiner.blockChain.Blocks[blockHash].PrevHash {
+		block := a.inkMiner.blockChain.Blocks[blockHash]
+		if opRecord, ok := block.OpRecords[deleteShapeReq.ShapeHash]; ok {
+			if reflect.DeepEqual(opRecord.AuthorPubKey, a.inkMiner.pubKey) {
+				a.inkMiner.broadcastNewOperation(opRecordToDelete)
+				block := a.inkMiner.computeBlock()
+
+				// TODO: ping to see if validated according to validateNum
+				blockHash := a.inkMiner.blockChain.NewestHash
+
+				*inkRemaining = 0 // call get ink?
+
+				return nil
+			}
+
+			break //TODO: should we stop if shapeHash is equal even if public key doesn't match? chances of this?
+		}
+	}
+
+	return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOWNER])
 }
 
 func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
