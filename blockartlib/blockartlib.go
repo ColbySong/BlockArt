@@ -7,8 +7,24 @@ library (blockartlib) to be used in project 1 of UBC CS 416 2017W2.
 
 package blockartlib
 
-import "crypto/ecdsa"
-import "fmt"
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"encoding/gob"
+	"fmt"
+	"log"
+	"net"
+	"net/rpc"
+	"os"
+	"strings"
+
+	"../util"
+)
+
+var (
+	errLog *log.Logger = log.New(os.Stderr, "[blockartlib] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+	outLog *log.Logger = log.New(os.Stderr, "[blockartlib] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
+)
 
 // Represents a type of shape in the BlockArt system.
 type ShapeType int
@@ -20,6 +36,11 @@ const (
 	// Circle shape (extra credit).
 	// CIRCLE
 )
+
+type CanvasStruct struct {
+	MinerRPC  *rpc.Client
+	MinerAddr string
+}
 
 // Settings for a canvas in BlockArt.
 type CanvasSettings struct {
@@ -126,9 +147,35 @@ type InvalidBlockHashError string
 
 func (e InvalidBlockHashError) Error() string {
 	return fmt.Sprintf("BlockArt: Invalid block hash [%s]", string(e))
+
 }
 
 // </ERROR DEFINITIONS>
+type InvalidPrivKey struct{}
+
+func (InvalidPrivKey) Error() string {
+	return fmt.Sprintf("BlockArt: The given private key does not match the private key at the miner address given")
+}
+
+// CUSTOM ERROR DEFINITIONS
+type ErrorEnum int
+
+const (
+	INSUFFICIENTINK ErrorEnum = iota
+	INVALIDSHAPEHASH
+	INVALIDPRIVKEY
+	INVALIDBLOCKHASH
+	SHAPEOWNERERROR
+)
+
+var ErrorName = []string{
+	INSUFFICIENTINK:  "INSUFFICIENTINK",
+	INVALIDSHAPEHASH: "INVALIDSHAPEHASH",
+	INVALIDPRIVKEY:   "INVALIDPRIVKEY",
+	INVALIDBLOCKHASH: "INVALIDBLOCKHASH",
+	SHAPEOWNERERROR:  "SHAPEOWNERERROR",
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 // Represents a canvas in the system.
@@ -182,6 +229,164 @@ type Canvas interface {
 	CloseCanvas() (inkRemaining uint32, err error)
 }
 
+type NewShapeResponse struct {
+	ShapeHash    string
+	BlockHash    string
+	InkRemaining uint32
+}
+
+type DeleteShapeReq struct {
+	ValidateNum uint8
+	ShapeHash   string
+}
+
+type AddShapeRequest struct {
+	ValidateNum   uint8
+	ShapeType     ShapeType
+	SvgString     string
+	Fill          string
+	Stroke        string
+	IsTransparent bool
+	IsClosed      bool
+}
+
+func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
+	if shapeType != PATH {
+		return "", "", 0, InvalidShapeSvgStringError("Only PATH shape is supported")
+	}
+
+	// ValidateShapeSVGString will return the right type of error
+	if _, err := util.ValidateShapeSVGString(shapeSvgString); err != nil {
+		switch errorStr := err.Error(); errorStr {
+		case util.ShapeErrorName[util.INVALIDSHAPESVGSTRING]:
+			return "", "", 0, InvalidShapeSvgStringError(shapeSvgString)
+		case util.ShapeErrorName[util.SHAPESVGSTRINGTOOLONG]:
+			return "", "", 0, ShapeSvgStringTooLongError(shapeSvgString)
+		default:
+			return "", "", 0, err
+		}
+	}
+
+	isTransparent := false
+	isClosed := false
+
+	if fill == "transparent" {
+		isTransparent = true
+	}
+
+	lastSVGChar := string(shapeSvgString[len(shapeSvgString)-1])
+
+	if lastSVGChar == "Z" || lastSVGChar == "z" {
+		isClosed = true
+	}
+
+	addShapeRequest := AddShapeRequest{
+		ValidateNum:   validateNum,
+		ShapeType:     shapeType,
+		SvgString:     shapeSvgString,
+		Fill:          fill,
+		Stroke:        stroke,
+		IsTransparent: isTransparent,
+		IsClosed:      isClosed,
+	}
+
+	resp := NewShapeResponse{}
+	if err = c.MinerRPC.Call("MArtNode.AddShape", addShapeRequest, &resp); err != nil {
+		switch errorStr := err.Error(); errorStr {
+		case ErrorName[INSUFFICIENTINK]:
+			return "", "", 0, InsufficientInkError(resp.InkRemaining)
+		case util.ShapeErrorName[util.SHAPEOVERLAP]:
+			//The returning shape hash is the overlapping one
+			return "", "", 0, ShapeOverlapError(resp.ShapeHash)
+		case util.ShapeErrorName[util.OUTOFBOUNDS]:
+			return "", "", 0, OutOfBoundsError(OutOfBoundsError{})
+		default:
+			return "", "", 0, DisconnectedError(c.MinerAddr)
+		}
+	}
+
+	return resp.ShapeHash, resp.BlockHash, resp.InkRemaining, nil
+}
+
+func (c CanvasStruct) GetSvgString(shapeHash string) (svgString string, err error) {
+	err = c.MinerRPC.Call("MArtNode.GetSvgString", shapeHash, &svgString)
+
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDSHAPEHASH]) {
+			return "", InvalidShapeHashError(shapeHash)
+		}
+	}
+	//TODO: miner side: implement map[shapeHash]Shape where Shape has shapeType, svgstring, fill, stroke
+	return "", InvalidShapeHashError(shapeHash)
+}
+
+func (c CanvasStruct) GetInk() (inkRemaining uint32, err error) {
+	var ignoredreq = true
+	err = c.MinerRPC.Call("MArtNode.GetInk", ignoredreq, &inkRemaining)
+	if err != nil {
+		return 0, DisconnectedError(c.MinerAddr)
+	}
+	return inkRemaining, nil
+}
+
+func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
+	req := DeleteShapeReq{
+		ValidateNum: validateNum,
+		ShapeHash:   shapeHash}
+	err = c.MinerRPC.Call("MArtNode.DeleteShape", req, &inkRemaining)
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[SHAPEOWNERERROR]) {
+			return 0, ShapeOwnerError(shapeHash)
+		}
+		return 0, DisconnectedError(c.MinerAddr)
+	}
+	return inkRemaining, nil
+}
+
+func (c CanvasStruct) GetShapes(blockHash string) (shapeHashes []string, err error) {
+	// TODO: init shapeHashes string array?
+	err = c.MinerRPC.Call("MArtNode.GetShapes", blockHash, &shapeHashes)
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
+			return []string{""}, InvalidBlockHashError(blockHash)
+		}
+		return []string{""}, DisconnectedError(c.MinerAddr)
+	}
+	return shapeHashes, nil
+}
+
+func (c CanvasStruct) GetGenesisBlock() (blockHash string, err error) {
+	var ignoredreq = true
+	err = c.MinerRPC.Call("MArtNode.GetGenesisBlock", ignoredreq, &blockHash)
+	if err != nil {
+		return "", DisconnectedError(c.MinerAddr)
+	}
+	return blockHash, nil
+}
+
+func (c CanvasStruct) GetChildren(blockHash string) (blockHashes []string, err error) {
+	// TODO: init blockHashes string array?
+	err = c.MinerRPC.Call("MArtNode.GetChildren", blockHash, &blockHashes)
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
+			return []string{""}, InvalidBlockHashError(blockHash)
+		}
+		return []string{""}, DisconnectedError(c.MinerAddr)
+	}
+	return blockHashes, nil
+}
+
+func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
+	//TODO: so far, can't see what info miner needs to know about artnode upon disconnect
+	var ignoredreq = true
+	var resp uint32
+	err = c.MinerRPC.Call("MArtNode.GetInk", ignoredreq, &resp)
+	if err = c.MinerRPC.Close(); err != nil {
+		return 0, DisconnectedError(c.MinerAddr)
+	}
+	return resp, nil
+}
+
 // The constructor for a new Canvas object instance. Takes the miner's
 // IP:port address string and a public-private key pair (ecdsa private
 // key type contains the public key). Returns a Canvas instance that
@@ -193,7 +398,28 @@ type Canvas interface {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	// TODO
-	// For now return DisconnectedError
-	return nil, CanvasSettings{}, DisconnectedError("")
+	outLog.Printf("Reached OpenCanvas")
+	gob.Register(&net.TCPAddr{})
+	gob.Register(&elliptic.CurveParams{})
+
+	minerRPC, err := rpc.Dial("tcp", minerAddr)
+	handleError("Could not make RPC connection to miner", err)
+
+	canvasSettings := CanvasSettings{}
+	err = minerRPC.Call("MArtNode.OpenCanvas", privKey, &canvasSettings)
+	if err != nil {
+		if strings.EqualFold(err.Error(), ErrorName[INVALIDPRIVKEY]) {
+			return nil, canvasSettings, InvalidPrivKey(InvalidPrivKey{})
+		}
+		return nil, canvasSettings, DisconnectedError(minerAddr)
+	}
+	canvasStruct := CanvasStruct{MinerRPC: minerRPC, MinerAddr: minerAddr}
+
+	return canvasStruct, canvasSettings, nil
+}
+
+func handleError(msg string, e error) {
+	if e != nil {
+		errLog.Fatalf("%s, err = %s\n", msg, e.Error())
+	}
 }
