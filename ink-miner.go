@@ -188,7 +188,6 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
 		return nil
 	}
 	pendingOperations.Unlock()
-	m.computeBlock() //compute block with new operation
 
 	return nil
 }
