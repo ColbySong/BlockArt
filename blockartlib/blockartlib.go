@@ -335,7 +335,7 @@ func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemai
 		ShapeHash:   shapeHash}
 	err = c.MinerRPC.Call("MArtNode.DeleteShape", req, &inkRemaining)
 	if err != nil {
-		if strings.EqualFold(err.Error(), ErrorName[SHAPEOWNERERROR]) {
+		if strings.EqualFold(err.Error(), ErrorName[SHAPEOWNER]) {
 			return 0, ShapeOwnerError(shapeHash)
 		}
 		return 0, DisconnectedError(c.MinerAddr)
