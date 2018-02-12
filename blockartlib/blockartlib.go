@@ -9,8 +9,11 @@ package blockartlib
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"encoding/gob"
 	"fmt"
 	"log"
+	"net"
 	"net/rpc"
 	"os"
 	"strings"
@@ -395,12 +398,15 @@ func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	outLog.Printf("Reached AddShape")
+	outLog.Printf("Reached OpenCanvas")
+	gob.Register(&net.TCPAddr{})
+	gob.Register(&elliptic.CurveParams{})
+
 	minerRPC, err := rpc.Dial("tcp", minerAddr)
+	handleError("Could not make RPC connection to miner", err)
 
 	canvasSettings := CanvasSettings{}
-	err = minerRPC.Call("MArtNode.OpenCanvas", privKey, canvasSettings)
-	handleError("Could not connect to miner", err) //TODO: should we make this an error we return?
+	err = minerRPC.Call("MArtNode.OpenCanvas", privKey, &canvasSettings)
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDPRIVKEY]) {
 			return nil, canvasSettings, InvalidPrivKey(InvalidPrivKey{})

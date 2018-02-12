@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -300,13 +301,12 @@ func verifyTrailingZeros(hash string, numZeros uint8) bool {
 // Give requesting art node the canvas settings
 // Also check if the art node knows your private key
 func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockartlib.CanvasSettings) error {
-	outLog.Printf("Reached AddShape")
-	outLog.Printf("incomingPrivKey %d, inkMinerPrivKey, %d", privKey, *a.inkMiner.privKey)
-	if privKey == *a.inkMiner.privKey { //TODO: can use == to compare priv keys?
+	outLog.Printf("Reached OpenCanvas")
+	if reflect.DeepEqual(privKey, *a.inkMiner.privKey) {
 		*canvasSettings = a.inkMiner.settings.CanvasSettings
 		return nil
 	}
-	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDPRIVKEY]) // TODO: return error if priv keys do not match???
+	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDPRIVKEY])
 }
 
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
@@ -380,7 +380,6 @@ func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 			shapeHashes[i] = hash
 			i++
 		}
-		// iterate through all operations stored on the block which should be shapehashes?
 		return nil
 	}
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
