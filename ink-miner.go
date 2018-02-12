@@ -15,11 +15,12 @@ import (
 	"sync"
 	"time"
 
+	"crypto/md5"
+	"encoding/json"
+
 	"./args"
 	"./blockartlib"
 	"./blockchain"
-	"encoding/json"
-	"crypto/md5"
 )
 
 const HeartbeatMultiplier = 2
@@ -33,7 +34,7 @@ type ConnectedMiners struct {
 
 type PendingOperations struct {
 	sync.RWMutex
-	all map[string]*args.Operation
+	all map[string]*blockchain.OpRecord
 }
 
 type InkMiner struct {
@@ -53,7 +54,7 @@ var (
 	errLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	connectedMiners               = ConnectedMiners{all: make([]net.Addr, 0, 0)}
-	pendingOperations             = PendingOperations{all: make(map[string]*args.Operation)}
+	pendingOperations             = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
 )
 
 // Start the miner.
@@ -140,29 +141,52 @@ func (m InkMiner) maintainMinerConnections() {
 	}
 }
 
-func (s *MServer) DisseminateOperation(op args.Operation, _ignore *bool) error {
+func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
 	pendingOperations.Lock()
 
-	if _, exists := pendingOperations.all[op.Hash]; !exists {
+	if _, exists := pendingOperations.all[op.OpSig]; !exists {
 		// Add operation to pending transaction
-		pendingOperations.all[op.Hash] = &args.Operation{op.Op, op.Hash}
+		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
-		connectedMiners.Lock()
-		for _, minerAddr := range connectedMiners.all {
-			miner, err := rpc.Dial("tcp", minerAddr.String())
-			handleError("Could not dial miner", err)
-			err = miner.Call("MServer.DisseminateOperation", op, nil)
-			handleError("Could not call RPC method MServer.DisseminateOperation", err)
-		}
-		connectedMiners.Unlock()
+		sendToAllConnectedMiners("MServer.DisseminateOperation", op)
 
 		return nil
 	}
 
 	pendingOperations.Unlock()
 
+	return nil
+}
+
+// Disseminate Block
+//
+// If block number is greater than the local blockchain's latest block number by 1:
+// 1) Validate this block
+//		a) Verify all operations within the block are valid
+//		b) Verify that it used a valid prevHash
+//		c) Verify that the blockhash contains a valid number of zeroes at the end
+// 2) Add this block to the blockchain and start build off this newest block
+//
+// If block number is greater than the local blockchain's latest block number by more than 1:
+// 1) Fetch all block numbers between local blockchain's latest block and this block number
+// 		a) Verify all operations within the block are valid
+//		b) Verify that it used a valid prevHash
+//		c) Verify that the blockhash contains a valid number of zeroes at the end
+// 2) Validate this block
+//		a) Verify all operations within the block are valid
+//		b) Verify that it used a valid prevHash
+//		c) Verify that the blockhash contains a valid number of zeroes at the end
+// 3) Add all fetched blocks and this block to the blockchain and build off this newest block
+//
+// When to disseminate:
+// 1) If the block is valid AND
+// 2) If blockHash does not exist in local blockchain AND
+// 3) If block number is greater than local blockchain's latest block number
+// Otherwise, do not disseminate
+func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
+	// TODO: Verify, update, and disseminate block
 	return nil
 }
 
@@ -264,7 +288,19 @@ func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
 	// TODO - stub
 	// TODO - clear ops that are included in this block, but only if confident that they
 	// TODO   will be part of the main chain
+	sendToAllConnectedMiners("MServer.DisseminateBlock", *block)
 	return nil
+}
+
+func sendToAllConnectedMiners(remoteProcedure string, payload interface{}) {
+	connectedMiners.Lock()
+	for _, minerAddr := range connectedMiners.all {
+		miner, err := rpc.Dial("tcp", minerAddr.String())
+		handleError("Could not dial miner: "+minerAddr.String(), err)
+		err = miner.Call(remoteProcedure, payload, nil)
+		handleError("Could not call RPC method: "+remoteProcedure, err)
+	}
+	connectedMiners.Unlock()
 }
 
 // Compute the MD5 hash of a Block
@@ -292,4 +328,3 @@ func handleError(msg string, e error) {
 		errLog.Fatalf("%s, err = %s\n", msg, e.Error())
 	}
 }
-
