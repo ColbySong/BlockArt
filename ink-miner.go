@@ -452,8 +452,6 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	// create svg path
 	shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
 
-	// Create svg hash
-
 	shapeHashStruct := ShapeHashStruct{
 		ShapeSvgPath: shapeSvgPathString,
 		PrivKey:      *a.inkMiner.privKey,
@@ -482,7 +480,6 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 	outLog.Printf("Reached GetSvgString\n")
-
 	newestHash := blockChain.NewestHash
 	for blockHash := newestHash; blockHash != a.inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
 		block := blockChain.Blocks[blockHash]
