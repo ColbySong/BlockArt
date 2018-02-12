@@ -1,13 +1,29 @@
 package util
 
 import (
+	"errors"
 	"math"
 	"strconv"
 	"strings"
 	"unicode"
-
-	"../blockartlib"
 )
+
+// SHAPE ERRORS
+type ShapeErrorEnum int
+
+const (
+	INVALIDSHAPESVGSTRING ShapeErrorEnum = iota
+	SHAPESVGSTRINGTOOLONG
+	SHAPEOVERLAP
+	OUTOFBOUNDS
+)
+
+var ShapeErrorName = []string{
+	INVALIDSHAPESVGSTRING: "INVALIDSHAPESVGSTRING",
+	SHAPESVGSTRINGTOOLONG: "SHAPESVGSTRINGTOOLONG",
+	SHAPEOVERLAP:          "SHAPEOVERLAP",
+	OUTOFBOUNDS:           "OUTOFBOUNDS",
+}
 
 var validOperations = []rune{'M', 'm', 'L', 'l', 'H', 'h', 'V', 'v', 'Z', 'z'}
 
@@ -27,23 +43,23 @@ type Point struct {
 // - InvalidShapeSvgStringError
 func ValidateShapeSVGString(shapeSvgString string) (bool, error) {
 	if len(shapeSvgString) > 128 {
-		return false, blockartlib.ShapeSvgStringTooLongError(shapeSvgString)
+		return false, errors.New(ShapeErrorName[SHAPESVGSTRINGTOOLONG])
 	}
 
 	for _, char := range shapeSvgString {
 		if unicode.IsLetter(char) {
 			if !isOperationValid(char) {
-				return false, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return false, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 		} else {
 			if !unicode.IsSpace(char) && !unicode.IsDigit(char) {
-				return false, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return false, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 		}
 	}
 
 	if _, err := ConvertPathToPoints(shapeSvgString); err != nil {
-		return false, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+		return false, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 	}
 
 	return true, nil
@@ -91,21 +107,21 @@ func CalculateInkRequired(svgPath SVGPathCoordinates, isTransparent bool, isClos
 }
 
 // Returns true if the given svg path goes out of the bounds of the canvas
-func CheckOutOfBounds(svgPath SVGPathCoordinates, canvasXMax uint32, canvasYMax uint32) bool {
+func CheckOutOfBounds(svgPath SVGPathCoordinates, canvasXMax uint32, canvasYMax uint32) error {
 	minX, maxX := minMax(svgPath.XCords)
 	minY, maxY := minMax(svgPath.YCords)
 
 	if minX < 0 || minY < 0 {
-		return true
+		return errors.New(ShapeErrorName[OUTOFBOUNDS])
 	} else if uint32(maxX) > canvasXMax || uint32(maxY) > canvasYMax {
-		return true
+		return errors.New(ShapeErrorName[OUTOFBOUNDS])
 	}
 
-	return false
+	return nil
 }
 
 // Return true if two svgPath overlaps
-func CheckOverlap(svgPathOne SVGPathCoordinates, svgPathTwo SVGPathCoordinates) bool {
+func CheckOverlap(svgPathOne SVGPathCoordinates, svgPathTwo SVGPathCoordinates) error {
 	for i := 0; i < len(svgPathOne.XCords)-1; i++ {
 		p1 := Point{xCord: svgPathOne.XCords[i], yCord: svgPathOne.YCords[i]}
 		p2 := Point{xCord: svgPathOne.XCords[i+1], yCord: svgPathOne.YCords[i+1]}
@@ -114,12 +130,12 @@ func CheckOverlap(svgPathOne SVGPathCoordinates, svgPathTwo SVGPathCoordinates) 
 			p3 := Point{xCord: svgPathTwo.XCords[j], yCord: svgPathTwo.YCords[j]}
 			p4 := Point{xCord: svgPathTwo.XCords[j+1], yCord: svgPathTwo.YCords[j+1]}
 			if intersect(p1, p2, p3, p4) {
-				return true
+				return errors.New(ShapeErrorName[SHAPEOVERLAP])
 			}
 		}
 	}
 
-	return false
+	return nil
 }
 
 // Convert a SVG path string to list of x and y points
@@ -133,7 +149,7 @@ func ConvertPathToPoints(shapeSvgString string) (SVGPathCoordinates, error) {
 			absXCord, xerr := strconv.Atoi(splitStrings[i+1])
 			absYCord, yerr := strconv.Atoi(splitStrings[i+2])
 			if xerr != nil || yerr != nil {
-				return SVGPathCoordinates{}, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return SVGPathCoordinates{}, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 			xCords = append(xCords, absXCord)
 			yCords = append(yCords, absYCord)
@@ -141,35 +157,35 @@ func ConvertPathToPoints(shapeSvgString string) (SVGPathCoordinates, error) {
 			relXCord, xerr := strconv.Atoi(splitStrings[i+1])
 			relYCord, yerr := strconv.Atoi(splitStrings[i+2])
 			if xerr != nil || yerr != nil {
-				return SVGPathCoordinates{}, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return SVGPathCoordinates{}, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 			xCords = append(xCords, xCords[len(xCords)-1]+relXCord)
 			yCords = append(yCords, yCords[len(yCords)-1]+relYCord)
 		case "V":
 			absYCord, yerr := strconv.Atoi(splitStrings[i+1])
 			if yerr != nil {
-				return SVGPathCoordinates{}, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return SVGPathCoordinates{}, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 			xCords = append(xCords, xCords[len(xCords)-1])
 			yCords = append(yCords, absYCord)
 		case "v":
 			relYCord, yerr := strconv.Atoi(splitStrings[i+1])
 			if yerr != nil {
-				return SVGPathCoordinates{}, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return SVGPathCoordinates{}, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 			xCords = append(xCords, xCords[len(xCords)-1])
 			yCords = append(yCords, yCords[len(yCords)-1]+relYCord)
 		case "H":
 			absXCord, xerr := strconv.Atoi(splitStrings[i+1])
 			if xerr != nil {
-				return SVGPathCoordinates{}, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return SVGPathCoordinates{}, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 			xCords = append(xCords, absXCord)
 			yCords = append(yCords, yCords[len(yCords)-1])
 		case "h":
 			relXCord, xerr := strconv.Atoi(splitStrings[i+1])
 			if xerr != nil {
-				return SVGPathCoordinates{}, blockartlib.InvalidShapeSvgStringError(shapeSvgString)
+				return SVGPathCoordinates{}, errors.New(ShapeErrorName[INVALIDSHAPESVGSTRING])
 			}
 			xCords = append(xCords, xCords[len(xCords)-1]+relXCord)
 			yCords = append(yCords, yCords[len(yCords)-1])

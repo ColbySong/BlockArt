@@ -55,8 +55,6 @@ type MArtNode struct {
 	inkMiner *InkMiner // so artnode can get instance of ink miner
 }
 
-var ShapeByShapeHash map[string]*blockartlib.Shape
-
 var (
 	errLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
@@ -114,8 +112,6 @@ func main() {
 	go miner.startSendingHeartbeats()
 	go miner.maintainMinerConnections()
 	go miner.startMiningBlocks()
-
-	ShapeByShapeHash = make(map[string]*blockartlib.Shape)
 
 	// Start listening for RPC calls from art & miner nodes
 	mserver := new(MServer)
@@ -304,6 +300,8 @@ func verifyTrailingZeros(hash string, numZeros uint8) bool {
 // Give requesting art node the canvas settings
 // Also check if the art node knows your private key
 func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockartlib.CanvasSettings) error {
+	outLog.Printf("Reached AddShape")
+	outLog.Printf("incomingPrivKey %d, inkMinerPrivKey, %d", privKey, *a.inkMiner.privKey)
 	if privKey == *a.inkMiner.privKey { //TODO: can use == to compare priv keys?
 		*canvasSettings = a.inkMiner.settings.CanvasSettings
 		return nil
@@ -312,6 +310,7 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 }
 
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
+	outLog.Printf("Reached AddShape \n")
 	inkRemaining := uint32(0) // TODO: get how much ink the miner has
 	requestedSVGPath, _ := util.ConvertPathToPoints(shapeRequest.SvgString)
 	isTransparent := shapeRequest.IsTransparent
@@ -319,8 +318,8 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 
 	// check if shape is in bound
 	canvasSettings := a.inkMiner.settings.CanvasSettings
-	if isOutOfBounds := util.CheckOutOfBounds(requestedSVGPath, canvasSettings.CanvasXMax, canvasSettings.CanvasYMax); isOutOfBounds {
-		return errors.New(blockartlib.ErrorName[blockartlib.OUTOFBOUNDS])
+	if util.CheckOutOfBounds(requestedSVGPath, canvasSettings.CanvasXMax, canvasSettings.CanvasYMax) != nil {
+		return errors.New(util.ShapeErrorName[util.OUTOFBOUNDS])
 	}
 
 	// check if shape overlaps with shapes from OTHER application
@@ -328,8 +327,8 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	currentSVGStringsOnCanvas := []string{} // TODO: requires a list of SVG strings that are currently on the canvas in the form of "M 0 10 H 20"
 	for _, svgPathString := range currentSVGStringsOnCanvas {
 		svgPath, _ := util.ConvertPathToPoints(svgPathString)
-		if util.CheckOverlap(svgPath, requestedSVGPath) {
-			return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOVERLAP])
+		if util.CheckOverlap(svgPath, requestedSVGPath) != nil {
+			return errors.New(util.ShapeErrorName[util.SHAPEOVERLAP])
 		}
 	}
 
@@ -339,7 +338,6 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 
-
 	// TODO: add to pending operations? call to create block??
 	// populate NewShapeResponse struct with shapeHash, blockHash and inkRemaining
 	// TODO: MINER MUST USE VALIDATENUM AND ONLY RETURN THE SHAPEHASH AND BLOCKHASH WHEN VALIDATE NUM IS SATISFIED
@@ -348,22 +346,20 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 }
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
-	// TODO: rather than keep record of shape by shapeHash, go thru entire blockchain
-	// to get svgstring by shapehash in op
-	if shape, ok := ShapeByShapeHash[shapeHash]; ok {
-		*svgString = shape.SvgString
-		return nil
-	}
+	outLog.Printf("Reached GetSvgString\n")
+	// TODO: traverse blockchain to get svgstring by shapehash
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDSHAPEHASH])
 }
 
 func (a *MArtNode) GetInk(ignoredreq bool, inkRemaining *uint32) error {
+	outLog.Printf("Reached GetInk\n")
 	// TODO: inkRemaining, an attribute in InkMiner struct? or get info
 	// by looking thru entire blockchain..
 	return nil
 }
 
 func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRemaining *uint8) error {
+	outLog.Printf("Reached DeleteShape\n")
 	// wait until delete is confirmed before updating ink remaining
 	// TODO: traverse blockchain and look for operation with incoming shapeHash
 	// and check if is owner (matching pub key)
@@ -373,10 +369,17 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 	return nil
 }
 
-func (a *MArtNode) GetShapes(blockHash string, shapeHashes []string) error {
+func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
+	outLog.Printf("Reached GetShapes\n")
 	// TODO: Can each key (blockhash) have more than 1 blocks??
-	if block, ok := a.inkMiner.blockChain.Blocks[blockHash]; ok {
 
+	if block, ok := a.inkMiner.blockChain.Blocks[blockHash]; ok {
+		shapeHashes := make([]string, len(block.OpRecords))
+		var i = 0
+		for hash := range block.OpRecords {
+			shapeHashes[i] = hash
+			i++
+		}
 		// iterate through all operations stored on the block which should be shapehashes?
 		return nil
 	}
@@ -384,11 +387,13 @@ func (a *MArtNode) GetShapes(blockHash string, shapeHashes []string) error {
 }
 
 func (a *MArtNode) GetGenesisBlock(ignoredreq bool, blockHash *string) error {
+	outLog.Printf("Reached GetGenesisBlock\n")
 	*blockHash = a.inkMiner.settings.GenesisBlockHash
 	return nil
 }
 
-func (a *MArtNode) GetChildren(blockHash string, blockHashes []string) error {
+func (a *MArtNode) GetChildren(blockHash string, blockHashes *[]string) error {
+	outLog.Printf("Reached GetChildren\n")
 	// TODO: traverse blockchain to find corresponding block and return it's children
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
 }

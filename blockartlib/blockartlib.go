@@ -14,6 +14,7 @@ import (
 	"net/rpc"
 	"os"
 	"strings"
+
 	"../util"
 )
 
@@ -159,25 +160,17 @@ type ErrorEnum int
 const (
 	INSUFFICIENTINK ErrorEnum = iota
 	INVALIDSHAPEHASH
-	INVALIDSHAPESVGSTRING
-	SHAPESVGSTRINGTOOLONG
-	SHAPEOVERLAP
-	OUTOFBOUNDS
 	INVALIDPRIVKEY
 	INVALIDBLOCKHASH
 	SHAPEOWNERERROR
 )
 
 var ErrorName = []string{
-	INSUFFICIENTINK:       "INSUFFICIENTINK",
-	INVALIDSHAPEHASH:      "INVALIDSHAPEHASH",
-	INVALIDSHAPESVGSTRING: "INVALIDSHAPESVGSTRING",
-	SHAPESVGSTRINGTOOLONG: "SHAPESVGSTRINGTOOLONG",
-	SHAPEOVERLAP:          "SHAPEOVERLAP",
-	OUTOFBOUNDS:           "OUTOFBOUNDS",
-	INVALIDPRIVKEY:        "INVALIDPRIVKEY",
-	INVALIDBLOCKHASH:      "INVALIDBLOCKHASH",
-	SHAPEOWNERERROR:       "SHAPEOWNERERROR",
+	INSUFFICIENTINK:  "INSUFFICIENTINK",
+	INVALIDSHAPEHASH: "INVALIDSHAPEHASH",
+	INVALIDPRIVKEY:   "INVALIDPRIVKEY",
+	INVALIDBLOCKHASH: "INVALIDBLOCKHASH",
+	SHAPEOWNERERROR:  "SHAPEOWNERERROR",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -245,20 +238,13 @@ type DeleteShapeReq struct {
 }
 
 type AddShapeRequest struct {
-	ValidateNum uint8
-	ShapeType ShapeType
-	SvgString string
-	Fill      string
-	Stroke    string
+	ValidateNum   uint8
+	ShapeType     ShapeType
+	SvgString     string
+	Fill          string
+	Stroke        string
 	IsTransparent bool
 	IsClosed      bool
-}
-
-type Shape struct {
-	ShapeType ShapeType
-	SvgString string
-	Fill      string
-	Stroke    string
 }
 
 func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
@@ -268,7 +254,14 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 
 	// ValidateShapeSVGString will return the right type of error
 	if _, err := util.ValidateShapeSVGString(shapeSvgString); err != nil {
-		return "", "", 0, err
+		switch errorStr := err.Error(); errorStr {
+		case util.ShapeErrorName[util.INVALIDSHAPESVGSTRING]:
+			return "", "", 0, InvalidShapeSvgStringError(shapeSvgString)
+		case util.ShapeErrorName[util.SHAPESVGSTRINGTOOLONG]:
+			return "", "", 0, ShapeSvgStringTooLongError(shapeSvgString)
+		default:
+			return "", "", 0, err
+		}
 	}
 
 	isTransparent := false
@@ -278,39 +271,37 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 		isTransparent = true
 	}
 
-	lastSVGChar := string(shapeSvgString[len(shapeSvgString) - 1])
+	lastSVGChar := string(shapeSvgString[len(shapeSvgString)-1])
 
 	if lastSVGChar == "Z" || lastSVGChar == "z" {
 		isClosed = true
 	}
 
 	addShapeRequest := AddShapeRequest{
-		ValidateNum: validateNum,
-		ShapeType: shapeType,
-		SvgString: shapeSvgString,
-		Fill:      fill,
-		Stroke:    stroke,
+		ValidateNum:   validateNum,
+		ShapeType:     shapeType,
+		SvgString:     shapeSvgString,
+		Fill:          fill,
+		Stroke:        stroke,
 		IsTransparent: isTransparent,
-		IsClosed: isClosed,
+		IsClosed:      isClosed,
 	}
 
 	resp := NewShapeResponse{}
-	err = c.MinerRPC.Call("MArtNode.AddShape", addShapeRequest, &resp)
-	if err != nil {
+	if err = c.MinerRPC.Call("MArtNode.AddShape", addShapeRequest, &resp); err != nil {
 		switch errorStr := err.Error(); errorStr {
 		case ErrorName[INSUFFICIENTINK]:
 			return "", "", 0, InsufficientInkError(resp.InkRemaining)
-		case ErrorName[INVALIDSHAPESVGSTRING]:
-			return "", "", 0, InsufficientInkError(resp.InkRemaining)
-		case ErrorName[SHAPEOVERLAP]:
-			return "", "", 0, ShapeOverlapError(resp.ShapeHash) //The returning shape hash is the overlapping one
-		case ErrorName[OUTOFBOUNDS]:
+		case util.ShapeErrorName[util.SHAPEOVERLAP]:
+			//The returning shape hash is the overlapping one
+			return "", "", 0, ShapeOverlapError(resp.ShapeHash)
+		case util.ShapeErrorName[util.OUTOFBOUNDS]:
 			return "", "", 0, OutOfBoundsError(OutOfBoundsError{})
 		default:
 			return "", "", 0, DisconnectedError(c.MinerAddr)
 		}
-
 	}
+
 	return resp.ShapeHash, resp.BlockHash, resp.InkRemaining, nil
 }
 
@@ -351,7 +342,7 @@ func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemai
 
 func (c CanvasStruct) GetShapes(blockHash string) (shapeHashes []string, err error) {
 	// TODO: init shapeHashes string array?
-	err = c.MinerRPC.Call("MArtNode.GetShapes", blockHash, shapeHashes)
+	err = c.MinerRPC.Call("MArtNode.GetShapes", blockHash, &shapeHashes)
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
 			return []string{""}, InvalidBlockHashError(blockHash)
@@ -372,7 +363,7 @@ func (c CanvasStruct) GetGenesisBlock() (blockHash string, err error) {
 
 func (c CanvasStruct) GetChildren(blockHash string) (blockHashes []string, err error) {
 	// TODO: init blockHashes string array?
-	err = c.MinerRPC.Call("MArtNode.GetChildren", blockHash, blockHashes)
+	err = c.MinerRPC.Call("MArtNode.GetChildren", blockHash, &blockHashes)
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
 			return []string{""}, InvalidBlockHashError(blockHash)
@@ -404,20 +395,19 @@ func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-
+	outLog.Printf("Reached AddShape")
 	minerRPC, err := rpc.Dial("tcp", minerAddr)
 
 	canvasSettings := CanvasSettings{}
-	err = minerRPC.Call("MArtNode.registerArtNode", privKey, canvasSettings)
+	err = minerRPC.Call("MArtNode.OpenCanvas", privKey, canvasSettings)
 	handleError("Could not connect to miner", err) //TODO: should we make this an error we return?
-
-	canvasStruct := CanvasStruct{MinerRPC: minerRPC, MinerAddr: minerAddr}
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDPRIVKEY]) {
 			return nil, canvasSettings, InvalidPrivKey(InvalidPrivKey{})
 		}
 		return nil, canvasSettings, DisconnectedError(minerAddr)
 	}
+	canvasStruct := CanvasStruct{MinerRPC: minerRPC, MinerAddr: minerAddr}
 
 	return canvasStruct, canvasSettings, nil
 }
