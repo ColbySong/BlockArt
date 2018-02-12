@@ -200,17 +200,20 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 	newestHash := blockChain.NewestHash
 	newestBlock := blockChain.Blocks[newestHash]
 
-	blockHash := computeBlockHash(block)
+	if block.BlockNum == newestBlock.BlockNum {
+		// Receieved a block with block number equal to the miner's newest block
 
-	if block.BlockNum == newestBlock.BlockNum+1 {
+		// TODO: Verify block's operations, if not valid, stop and don't disseminate
+		//		 Need to save this block incase it becomes the longest later
+
+	} else if block.BlockNum == newestBlock.BlockNum+1 {
 		// Receieved a block with block number equal to the one miner is currently mining
 
 		// Block's PrevHash matches newest block's PrevHash, add to block chain and disseminate
 		if block.PrevHash == newestHash {
 			// TODO: Verify block's operations, if not valid, stop and don't disseminate
 
-			blockChain.Blocks[blockHash] = &block
-			blockChain.NewestHash = blockHash
+			saveBlockToBlockChain(block)
 			// sendToAllConnectedMiners("MServer.DisseminateBlock", block)
 		} else {
 			// TODO: What should we do if block.PrevHash != newestHash?
@@ -232,6 +235,17 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 	}
 
 	return nil
+}
+
+// This method does not acquire lock; To use this function, acquire lock and then call function
+func saveBlockToBlockChain(block blockchain.Block) {
+	blockHash := computeBlockHash(block)
+
+	blockChain.Blocks[blockHash] = &block
+
+	if block.BlockNum > blockChain.Blocks[blockChain.NewestHash].BlockNum {
+		blockChain.NewestHash = blockHash
+	}
 }
 
 func getBlockChainFromNeighbours() []*blockchain.BlockChain {
