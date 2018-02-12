@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	minerAddr := "127.0.0.1:36748"
+	minerAddr := "127.0.0.1:61768"
 	privKeyToParse := "3081a40201010430aeb7b244cf5ee8a952ff378a140275a0d7f98a7c44faca12357867c667b860fa2aaf7bf9039d3b481479bf0fd512097fa00706052b81040022a1640362000449e30da789d5b12a9487a96d70d69b6b8cbd6821d7a647f35c18a8d5f0969054ae3130e7a2a813363eb578747bc77048b700badea328df20ce68a58fcd0e4166f538f9393e0b4072d069cc4cc631271660dc5ebebb20531f11eeb4bd5aa6a5ca" // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
 
 	privKey, _ := ParsePrivateKey(privKeyToParse)
