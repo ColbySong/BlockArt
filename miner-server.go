@@ -50,17 +50,23 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
 	pendingOperations.Lock()
 
-	if _, exists := pendingOperations.all[op.OpSig]; !exists {
+	opRecordHash := computeOpRecordHash(op)
+	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
-		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.AuthorPubKey}
+		// TODO : get ink for op
+		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{
+			Op:           op.Op,
+			InkUsed:      op.InkUsed,
+			OpSigS:       op.OpSigS,
+			OpSigR:       op.OpSigR,
+			AuthorPubKey: op.AuthorPubKey,
+		}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
 		sendToAllConnectedMiners("MServer.DisseminateOperation", op, nil)
-
 		return nil
 	}
-
 	pendingOperations.Unlock()
 
 	return nil
@@ -152,6 +158,7 @@ func switchToLongestBranch() string {
 	}
 
 	blockChain.NewestHash = newestHash
+	return newestHash
 }
 // Checks if ALL operations as a set can be executed.
 // Must check for ink level and shape overlap.

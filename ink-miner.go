@@ -163,7 +163,7 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
 			Op:           op.Op,
 			InkUsed:      op.InkUsed,
 			OpSigS:       op.OpSigS,
-			OpSigR:       op.OpSigR, 
+			OpSigR:       op.OpSigR,
 			AuthorPubKey: op.AuthorPubKey,
 		}
 		pendingOperations.Unlock()
