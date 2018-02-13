@@ -30,7 +30,7 @@ const GENESIS_BLOCK_HASH = "83218ac34c1834c26781fe4bde918ee4"
 const RANDOM_NONCE = 1 // just putting a random nonce in the block since we are not testing it
 const SVG_OP_ONE = "<path d=\"M 0 0 L 20 20\" stroke=\"red\" fill=\"transparent\"/>"
 const SVG_OP_TWO = "<path d=\"M 30 30 L 40 40\" stroke=\"red\" fill=\"transparent\"/>"
-const SVG_OP_THREE = "delete <path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
+const SVG_OP_THREE = "<path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
 
 var p256 = elliptic.P256()
 var minerOnePrivateKey, _ = ecdsa.GenerateKey(p256, rand.Reader)
@@ -44,7 +44,6 @@ var minerNetSettings = blockartlib.MinerNetSettings{
 	GenesisBlockHash: GENESIS_BLOCK_HASH,
 	InkPerNoOpBlock: 50,
 	InkPerOpBlock: 100,
-
 }
 
 // A mock block chain used to test traverse functions
@@ -167,15 +166,25 @@ func setUpBlockChain() {
 
 func TestGetInkTraversal(t *testing.T) {
 	setUpBlockChain()
-	// TODO: Add test for traversing the tree to get ink
+	if ink := getInkTraversal(mockInkMiner, minerOnePublicKey); ink != 140 {
+		t.Errorf("Expected ink for miner 1: 140, but got %d", ink)
+	}
+
+	if ink := getInkTraversal(mockInkMiner, minerTwoPublicKey); ink != 130 {
+		t.Errorf("Expected ink for miner 2: 130, but got %d", ink)
+	}
 }
 
 func TestGetShapesTraversal(t *testing.T) {
-	// setUpBlockChain()
-	// TODO: Add test for traversing the tree to get all the shapes
+	setUpBlockChain()
+	minerOneShapes := []string{"M 0 0 L 20 20"}
+	if shapes := getShapeTraversal(mockInkMiner, minerOnePublicKey); !reflect.DeepEqual(minerOneShapes, shapes) {
+		t.Errorf("Expected ink for miner 2: %v, but got %v", minerOneShapes, shapes)
+	}
 }
 
 func TestGetShapeTraversal(t *testing.T) {
 	// setUpBlockChain()
 	// TODO: Add test for traversing the tree to get a svg specified by shapeHash
+
 }

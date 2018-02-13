@@ -555,7 +555,7 @@ func getShapeTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey) []string {
 }
 
 // returns all the shapes in the opRecords EXCEPT the ones drawn by @param pubKey
-func getShapesFromOpRecords(opRecords []blockchain.OpRecord, pubKey *ecdsa.PublicKey) []string {
+func getShapesFromOpRecords(opRecords map[string]*blockchain.OpRecord, pubKey *ecdsa.PublicKey) []string {
 	var shapesDrawnByOtherApps []string
 	var shapesToDelete []string
 	for _, opRecord := range opRecords {
