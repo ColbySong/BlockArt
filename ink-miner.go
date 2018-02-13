@@ -424,7 +424,7 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
 	outLog.Printf("Reached AddShape \n")
 	inkRemaining := getInkTraversal(a.inkMiner)
-	if inkRemaining < 0 {
+	if inkRemaining <= 0 {
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 	requestedSVGPath, _ := util.ConvertPathToPoints(shapeRequest.SvgString)
@@ -464,7 +464,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	shapeHash := computeShapeHash(shapeHashStruct)
 
 	opRecord := blockchain.OpRecord{
-		Op:           shapeSvgPathString, //should this be the full html path?
+		Op:           shapeSvgPathString,
 		OpSig:        shapeHash,
 		InkUsed:      inkRequired,
 		AuthorPubKey: *a.inkMiner.pubKey}
