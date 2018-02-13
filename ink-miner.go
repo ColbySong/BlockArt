@@ -627,6 +627,21 @@ func getShapesFromOpRecords(opRecords map[string]*blockchain.OpRecord, pubKey *e
 	return shapesDrawnByOtherApps
 }
 
+// Returns all operations in the given blockchain
+// Must supply valid corresponding genesisBlockHash
+func GetAllOperationsFromBlockChain(bc blockchain.BlockChain, genesisBlockHash string) map[string]*blockchain.OpRecord {
+	allOps := make(map[string]*blockchain.OpRecord)
+	for blockHash := bc.NewestHash; blockHash != genesisBlockHash; blockHash = bc.Blocks[blockHash].PrevHash {
+		blockOpRecords := bc.Blocks[blockHash].OpRecords
+		if len(blockOpRecords) != 0 {
+			for opHash, op := range blockOpRecords {
+				allOps[opHash] = op
+			}
+		}
+	}
+	return allOps
+}
+
 func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 	outLog.Printf("Reached GetShapes\n")
 	// TODO: Can each key (blockhash) have more than 1 blocks??
