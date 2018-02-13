@@ -26,6 +26,7 @@ import (
 	"./blockchain"
 	"./util"
 	"bytes"
+	"crypto/rand"
 )
 
 const HeartbeatMultiplier = 2
@@ -40,11 +41,6 @@ type ConnectedMiners struct {
 type PendingOperations struct {
 	sync.RWMutex
 	all map[string]*blockchain.OpRecord
-}
-
-type ShapeHashStruct struct {
-	ShapeSvgPath string
-	PrivKey      ecdsa.PrivateKey
 }
 
 type InkMiner struct {
@@ -158,10 +154,11 @@ func (m InkMiner) maintainMinerConnections() {
 func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
 	pendingOperations.Lock()
 
-	if _, exists := pendingOperations.all[op.OpSig]; !exists {
+	opRecordHash := computeOpRecordHash(op)
+	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
 		// TODO : get ink for op
-		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.InkUsed, op.AuthorPubKey}
+		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{op.Op, op.InkUsed, op.OpSigS, op.OpSigR, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
@@ -176,11 +173,11 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // Broadcast the new operation
 func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
 	pendingOperations.Lock()
-
-	if _, exists := pendingOperations.all[op.OpSig]; !exists {
+	opRecordHash := computeOpRecordHash(op)
+	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
 		// TODO : get ink for op
-		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.InkUsed, op.AuthorPubKey}
+		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{op.Op, op.InkUsed, op.OpSigS, op.OpSigR, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
@@ -432,11 +429,10 @@ func computeBlockHash(block blockchain.Block) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-// Compute the RSA-SHA hash of a Shape
-func computeShapeHash(shapeHashStruct ShapeHashStruct) string {
-	bytes, err := json.Marshal(shapeHashStruct)
-	handleError("Could not marshal shape svg path to JSON", err)
-
+// Compute the MD5 hash of a OpRecord
+func computeOpRecordHash(opRecord blockchain.OpRecord) string {
+	bytes, err := json.Marshal(opRecord)
+	handleError("Could not marshal block to JSON", err)
 	hash := md5.New()
 	hash.Write(bytes)
 	return hex.EncodeToString(hash.Sum(nil))
@@ -503,25 +499,27 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	// create svg path
 	shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
 
-	shapeHashStruct := ShapeHashStruct{
-		ShapeSvgPath: shapeSvgPathString,
-		PrivKey:      *a.inkMiner.privKey,
-	}
+	// sign the shape
 
-	shapeHash := computeShapeHash(shapeHashStruct)
+	r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(shapeSvgPathString))
+	handleError("unable to sign shape", err)
 
 	opRecord := blockchain.OpRecord{
 		Op:           shapeSvgPathString,
-		OpSig:        shapeHash,
+		OpSigS:       s,
+		OpSigR:       r,
 		InkUsed:      inkRequired,
-		AuthorPubKey: *a.inkMiner.pubKey}
+		AuthorPubKey: *a.inkMiner.pubKey,
+	}
+
+	opRecordHash := computeOpRecordHash(opRecord)
 
 	a.inkMiner.broadcastNewOperation(opRecord)
 
 	// TODO: ping to see if validated according to validateNum
 	blockHash := blockChain.NewestHash
 
-	newShapeResp.ShapeHash = shapeHash
+	newShapeResp.ShapeHash = opRecordHash
 	newShapeResp.BlockHash = blockHash
 	newShapeResp.InkRemaining = 0 // call get ink?
 	return nil
@@ -573,15 +571,16 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 	if opRecord, exists := getOpRecord(deleteShapeReq.ShapeHash, a.inkMiner); exists {
 		if reflect.DeepEqual(opRecord.AuthorPubKey, a.inkMiner.pubKey) {
 			newOp := concatStrings([]string{"delete ", opRecord.Op})
-			shapeHashStruct := ShapeHashStruct{
-				ShapeSvgPath: newOp,
-				PrivKey: *a.inkMiner.privKey,
-			}
-			newOpSig := computeShapeHash(shapeHashStruct)
 
+			// sign the shape
+			r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(newOp))
+			handleError("unable to sign shape", err)
+
+			// TODO: add in inkrequired
 			newOpRecord := blockchain.OpRecord{
 				Op: newOp,
-				OpSig: newOpSig,
+				OpSigS: s,
+				OpSigR: r,
 				AuthorPubKey: *a.inkMiner.pubKey,
 			}
 			a.inkMiner.broadcastNewOperation(newOpRecord)
