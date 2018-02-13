@@ -58,6 +58,7 @@ var r3, s3, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpThree)
 
 var minerOneOpRecordOne = blockchain.OpRecord {
 	Op: SVG_OP_ONE,
+	InkUsed: 20,
 	OpSigR: r1,
 	OpSigS: s1,
 	AuthorPubKey: minerOnePublicKey,
@@ -66,6 +67,7 @@ var opRecOneHash = computeOpRecordHash(minerOneOpRecordOne)
 
 var minerOneOpRecordTwo = blockchain.OpRecord {
 	Op: SVG_OP_TWO,
+	InkUsed: 10,
 	OpSigR: r2,
 	OpSigS: s2,
 	AuthorPubKey: minerTwoPublicKey,
@@ -74,6 +76,7 @@ var opRecTwoHash = computeOpRecordHash(minerOneOpRecordTwo)
 
 var minerTwoOpRecord = blockchain.OpRecord {
 	Op: SVG_OP_THREE,
+	InkUsed: 10,
 	OpSigR: r3,
 	OpSigS: s3,
 	AuthorPubKey: minerTwoPublicKey,
