@@ -151,24 +151,6 @@ func (m InkMiner) maintainMinerConnections() {
 	}
 }
 
-func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
-	pendingOperations.Lock()
-
-	opRecordHash := computeOpRecordHash(op)
-	if _, exists := pendingOperations.all[opRecordHash]; !exists {
-		// Add operation to pending transaction
-		// TODO : get ink for op
-		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{op.Op, op.InkUsed, op.OpSigS, op.OpSigR, op.AuthorPubKey}
-		pendingOperations.Unlock()
-
-		// Send operation to all connected miners
-		sendToAllConnectedMiners("MServer.DisseminateOperation", op)
-		return nil
-	}
-	pendingOperations.Unlock()
-
-	return nil
-}
 
 // Broadcast the new operation
 func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
@@ -177,11 +159,17 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
 	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
 		// TODO : get ink for op
-		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{op.Op, op.InkUsed, op.OpSigS, op.OpSigR, op.AuthorPubKey}
+		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{
+			Op:           op.Op,
+			InkUsed:      op.InkUsed,
+			OpSigS:       op.OpSigS,
+			OpSigR:       op.OpSigR,
+			AuthorPubKey: op.AuthorPubKey,
+		}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
-		sendToAllConnectedMiners("MServer.DisseminateOperation", op)
+		sendToAllConnectedMiners("MServer.DisseminateOperation", op, nil)
 		return nil
 	}
 	pendingOperations.Unlock()
@@ -189,75 +177,6 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
 	return nil
 }
 
-// Disseminate Block
-//
-// If block number is greater than the local blockchain's latest block number by 1:
-// 1) Validate this block
-//		a) Verify all operations within the block are valid
-//		b) Verify that it used a valid prevHash
-//		c) Verify that the blockhash contains a valid number of zeroes at the end
-// 2) Add this block to the blockchain and start build off this newest block
-//
-// If block number is greater than the local blockchain's latest block number by more than 1:
-// 1) Fetch all block numbers between local blockchain's latest block and this block number
-// 		a) Verify all operations within the block are valid
-//		b) Verify that it used a valid prevHash
-//		c) Verify that the blockhash contains a valid number of zeroes at the end
-// 2) Validate this block
-//		a) Verify all operations within the block are valid
-//		b) Verify that it used a valid prevHash
-//		c) Verify that the blockhash contains a valid number of zeroes at the end
-// 3) Add all fetched blocks and this block to the blockchain and build off this newest block
-//
-// When to disseminate:
-// 1) If the block is valid AND
-// 2) If blockHash does not exist in local blockchain AND
-// 3) If block number is greater than local blockchain's latest block number
-// Otherwise, do not disseminate
-func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
-	// TODO: May need to change locking semantics
-	blockChain.Lock()
-	defer blockChain.Unlock()
-
-	newestHash := blockChain.NewestHash
-	newestBlock := blockChain.Blocks[newestHash]
-
-	if block.BlockNum == newestBlock.BlockNum {
-		// Receieved a block with block number equal to the miner's newest block
-
-		// TODO: Verify block's operations, if not valid, stop and don't disseminate
-		//		 Need to save this block incase it becomes the longest later
-
-	} else if block.BlockNum == newestBlock.BlockNum+1 {
-		// Receieved a block with block number equal to the one miner is currently mining
-
-		// Block's PrevHash matches newest block's PrevHash, add to block chain and disseminate
-		if block.PrevHash == newestHash {
-			// TODO: Verify block's operations, if not valid, stop and don't disseminate
-
-			saveBlockToBlockChain(block)
-			// sendToAllConnectedMiners("MServer.DisseminateBlock", block)
-		} else {
-			// TODO: What should we do if block.PrevHash != newestHash?
-			//       Save it anyway incase it becomes longest, don't work off it, and don't disseminate?
-			//       But if the PrevHash doesn't match, then it won't be valid in the miner's local blockchain
-		}
-
-		return nil
-	} else if block.BlockNum > newestBlock.BlockNum+1 {
-		// TODO: Receieved a block with block number greater than the one miner is currently mining
-
-		// neighbourBlockChains := getBlockChainFromNeighbours()
-
-		// TODO: process block chains and pick best to go off of
-
-	} else {
-		// TODO: Received a block with block number less than the one miner is currently mining
-		//       Save it anyway,
-	}
-
-	return nil
-}
 
 // This method does not acquire lock; To use this function, acquire lock and then call function
 func saveBlockToBlockChain(block blockchain.Block) {
@@ -265,12 +184,13 @@ func saveBlockToBlockChain(block blockchain.Block) {
 
 	blockChain.Blocks[blockHash] = &block
 
+	// Update if the block is new tip
 	if block.BlockNum > blockChain.Blocks[blockChain.NewestHash].BlockNum {
 		blockChain.NewestHash = blockHash
 	}
 }
 
-func getBlockChainFromNeighbours() []*blockchain.BlockChain {
+func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
 	var bcs []*blockchain.BlockChain
 
 	connectedMiners.Lock()
@@ -287,16 +207,6 @@ func getBlockChainFromNeighbours() []*blockchain.BlockChain {
 	connectedMiners.Unlock()
 
 	return bcs
-}
-
-// Return entire block chain
-func (s *MServer) GetBlockChain(_ignore bool, bc *blockchain.BlockChain) error {
-	blockChain.RLock()
-	defer blockChain.RUnlock()
-
-	*bc = blockChain
-
-	return nil
 }
 
 func (m InkMiner) getNodesFromServer() []net.Addr {
@@ -347,7 +257,7 @@ func (m InkMiner) startMiningBlocks() {
 		blockChain.Blocks[hash] = block
 		blockChain.NewestHash = hash
 
-		m.broadcastNewBlock(block)
+		broadcastNewBlock(*block)
 
 		blockChain.Unlock()
 	}
@@ -399,21 +309,22 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 	}
 }
 
-// Broadcast the newly-mined block to the miner network
-func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
-	// TODO - stub
+// Broadcast the newly-mined block to the miner network, and clear the operations that were included in it.
+func broadcastNewBlock(block blockchain.Block) error {
+
 	// TODO - clear ops that are included in this block, but only if confident that they
 	// TODO   will be part of the main chain
-	// sendToAllConnectedMiners("MServer.DisseminateBlock", *block)
+	 sendToAllConnectedMiners("MServer.DisseminateBlock", block, nil)
 	return nil
 }
 
-func sendToAllConnectedMiners(remoteProcedure string, payload interface{}) {
+// Generic method to send RPC to all peers
+func sendToAllConnectedMiners(remoteProcedure string, request interface{}, resp interface{}) {
 	connectedMiners.RLock()
 	for _, minerAddr := range connectedMiners.all {
 		miner, err := rpc.Dial("tcp", minerAddr.String())
 		handleError("Could not dial miner: "+minerAddr.String(), err)
-		err = miner.Call(remoteProcedure, payload, nil)
+		err = miner.Call(remoteProcedure, request, &resp)
 		handleError("Could not call RPC method: "+remoteProcedure, err)
 	}
 	connectedMiners.RUnlock()
