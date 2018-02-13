@@ -257,7 +257,7 @@ func (m InkMiner) startMiningBlocks() {
 		blockChain.Blocks[hash] = block
 		blockChain.NewestHash = hash
 
-		m.broadcastNewBlock(block)
+		broadcastNewBlock(*block)
 
 		blockChain.Unlock()
 	}
@@ -309,12 +309,12 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 	}
 }
 
-// Broadcast the newly-mined block to the miner network
-func (m InkMiner) broadcastNewBlock(block *blockchain.Block) error {
-	// TODO - stub
+// Broadcast the newly-mined block to the miner network, and clear the operations that were included in it.
+func broadcastNewBlock(block blockchain.Block) error {
+
 	// TODO - clear ops that are included in this block, but only if confident that they
 	// TODO   will be part of the main chain
-	// sendToAllConnectedMiners("MServer.DisseminateBlock", *block)
+	 sendToAllConnectedMiners("MServer.DisseminateBlock", block, nil)
 	return nil
 }
 

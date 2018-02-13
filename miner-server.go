@@ -28,7 +28,7 @@ import "./blockchain"
 // 2) If blockHash does not exist in local blockchain AND
 // 3) If block number is greater than local blockchain's latest block number
 // Otherwise, do not disseminate
-func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
+func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) {
 	// TODO: May need to change locking semantics
 	blockChain.Lock()
 	defer blockChain.Unlock()
@@ -40,9 +40,6 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 	} else {
 		errLog.Printf("Rejecting invalid block.\n")
 	}
-
-	// TODO: what kind of errors does this return?
-	return nil
 }
 
 
@@ -83,9 +80,6 @@ func (s *MServer) GetBlockChain(_ignore bool, bc *blockchain.BlockChain) error {
 	return nil
 }
 
-func sendBlockToPeers(block blockchain.Block) {
-	// TODO - stub
-}
 
 // Checks if a block is valid, including its operations.
 func (s *MServer) isValidBlock(block blockchain.Block) bool {
@@ -170,8 +164,6 @@ func hasValidOperations(ops map[string]*blockchain.OpRecord) bool {
 // Downloads the entire BlockChain from all connected miners and updates the local
 // version with the majority copy.
 func updateBlockChain() {
-	emptyReq := true // GetBlockChain RPC call takes no payload
-	var resp []*blockchain.BlockChain
-	sendToAllConnectedMiners("MServer.GetBlockChain", emptyReq, &resp)
+	_ = getBlockChainsFromNeighbours()
 	// TODO - update global variable to match majority value from the response
 }
