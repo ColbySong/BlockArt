@@ -158,10 +158,11 @@ func (m InkMiner) maintainMinerConnections() {
 func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
 	pendingOperations.Lock()
 
-	if _, exists := pendingOperations.all[op.OpSig]; !exists {
+	opRecordHash := computeOpRecordHash(op)
+	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
 		// TODO : get ink for op
-		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.InkUsed, op.AuthorPubKey}
+		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{op.Op, op.InkUsed, op.OpSigS, op.OpSigR, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
@@ -176,11 +177,11 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // Broadcast the new operation
 func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
 	pendingOperations.Lock()
-
-	if _, exists := pendingOperations.all[op.OpSig]; !exists {
+	opRecordHash := computeOpRecordHash(op)
+	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
 		// TODO : get ink for op
-		pendingOperations.all[op.OpSig] = &blockchain.OpRecord{op.Op, op.OpSig, op.InkUsed, op.AuthorPubKey}
+		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{op.Op, op.InkUsed, op.OpSigS, op.OpSigR, op.AuthorPubKey}
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
@@ -427,6 +428,15 @@ func computeBlockHash(block blockchain.Block) string {
 	bytes, err := json.Marshal(block)
 	handleError("Could not marshal block to JSON", err)
 
+	hash := md5.New()
+	hash.Write(bytes)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// Compute the MD5 hash of a OpRecord
+func computeOpRecordHash(opRecord blockchain.OpRecord) string {
+	bytes, err := json.Marshal(opRecord)
+	handleError("Could not marshal block to JSON", err)
 	hash := md5.New()
 	hash.Write(bytes)
 	return hex.EncodeToString(hash.Sum(nil))
