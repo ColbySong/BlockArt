@@ -28,7 +28,7 @@ import "./blockchain"
 // 2) If blockHash does not exist in local blockchain AND
 // 3) If block number is greater than local blockchain's latest block number
 // Otherwise, do not disseminate
-func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) {
+func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
 	// TODO: May need to change locking semantics
 	blockChain.Lock()
 	defer blockChain.Unlock()
@@ -40,6 +40,7 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) {
 	} else {
 		errLog.Printf("Rejecting invalid block.\n")
 	}
+	return nil
 }
 
 
