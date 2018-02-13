@@ -17,7 +17,6 @@ type Block struct {
 
 type OpRecord struct {
 	Op           string
-	OpSig        string // signed with private key of art node
 	InkUsed      uint32
 	OpSigS       *big.Int // signed with private key of art node
 	OpSigR	     *big.Int // edsca.Sign returns R, S which is both needed to verify
