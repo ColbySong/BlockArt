@@ -36,6 +36,7 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 	if s.isValidBlock(block) {
 		saveBlockToBlockChain(block)
 		sendToAllConnectedMiners("MServer.DisseminateBlock", block, nil)
+		switchToLongestBranch()
 	} else {
 		errLog.Printf("Rejecting invalid block.\n")
 	}
@@ -85,6 +86,17 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	blockChain.Lock() // TODO - this is also locked by the caller, what will happen?
 	defer blockChain.Unlock()
 
+	hash := computeBlockHash(block)
+
+	// 0. Check that this block isn't already part of the local blockChain
+	_, alreadyExists := blockChain.Blocks[hash]
+	if alreadyExists {
+		errLog.Printf("Invalid block received: block with hash already exists: %s\n", hash)
+		return false
+	}
+
+
+	// 1. Check for valid block num
 	prevBlock, prevBlockExistsLocally := blockChain.Blocks[block.PrevHash]
 	if !prevBlockExistsLocally {updateBlockChain()}
 
@@ -93,8 +105,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 		errLog.Printf("Invalid block received: no previous block found\n")
 		return false
 	}
-
-	// 1. Check for valid block num
+	
 	isNextBlock := block.BlockNum == prevBlock.BlockNum + 1
 	if !isNextBlock {
 		errLog.Printf("Invalid block received: invalid BlockNum [%d]\n", block.BlockNum)
@@ -108,21 +119,14 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	} else {
 		proofDifficulty = s.inkMiner.settings.PoWDifficultyOpBlock
 	}
-	hash := computeBlockHash(block)
+
 	hasValidPoW := verifyTrailingZeros(hash, proofDifficulty)
 	if !hasValidPoW {
 		errLog.Printf("Invalid block received: invalid proof-of-work\n")
 		return false
 	}
 
-	// 3. Check that this block isn't already part of the local blockChain
-	_, alreadyExists := blockChain.Blocks[hash]
-	if alreadyExists {
-		errLog.Printf("Invalid block received: block with hash already exists: %s\n", hash)
-		return false
-	}
-
-	// 4. Check operations for validity
+	// 3. Check operations for validity
 	if !hasValidOperations(block.OpRecords) {
 		errLog.Printf("Invalid block received: invalid operations\n")
 		return false
@@ -131,6 +135,24 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	return true
 }
 
+
+func switchToLongestBranch() string {
+	// TODO - how are we gonna handle locking this?
+	blockChain.Lock()
+	defer blockChain.Unlock()
+
+	maxBlockNum := uint32(0)
+	var newestHash string
+
+	for hash, block := range blockChain.Blocks {
+		if block.BlockNum > maxBlockNum {
+			maxBlockNum = block.BlockNum
+			newestHash = hash
+		}
+	}
+
+	blockChain.NewestHash = newestHash
+}
 // Checks if ALL operations as a set can be executed.
 // Must check for ink level and shape overlap.
 func hasValidOperations(ops map[string]*blockchain.OpRecord) bool {
