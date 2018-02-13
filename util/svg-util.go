@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"strconv"
@@ -35,6 +36,23 @@ type SVGPathCoordinates struct {
 type Point struct {
 	xCord int
 	yCord int
+}
+
+func ConvertToSvgPathString(shapeSvgString string, stroke string, fill string) string {
+	var buf bytes.Buffer
+	buf.WriteString("<path d=")
+	buf.WriteString("\"")
+	buf.WriteString(shapeSvgString)
+	buf.WriteString("\" ")
+	buf.WriteString("stroke=")
+	buf.WriteString("\"")
+	buf.WriteString(stroke)
+	buf.WriteString("\" ")
+	buf.WriteString("fill=")
+	buf.WriteString("\"")
+	buf.WriteString(fill)
+	buf.WriteString("\"/>")
+	return buf.String()
 }
 
 // Validate SVG Path String ("M 0 0 L 0 5")

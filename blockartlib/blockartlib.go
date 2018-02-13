@@ -165,7 +165,7 @@ const (
 	INVALIDSHAPEHASH
 	INVALIDPRIVKEY
 	INVALIDBLOCKHASH
-	SHAPEOWNERERROR
+	SHAPEOWNER
 )
 
 var ErrorName = []string{
@@ -173,7 +173,7 @@ var ErrorName = []string{
 	INVALIDSHAPEHASH: "INVALIDSHAPEHASH",
 	INVALIDPRIVKEY:   "INVALIDPRIVKEY",
 	INVALIDBLOCKHASH: "INVALIDBLOCKHASH",
-	SHAPEOWNERERROR:  "SHAPEOWNERERROR",
+	SHAPEOWNER:       "SHAPEOWNER",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -335,7 +335,7 @@ func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemai
 		ShapeHash:   shapeHash}
 	err = c.MinerRPC.Call("MArtNode.DeleteShape", req, &inkRemaining)
 	if err != nil {
-		if strings.EqualFold(err.Error(), ErrorName[SHAPEOWNERERROR]) {
+		if strings.EqualFold(err.Error(), ErrorName[SHAPEOWNER]) {
 			return 0, ShapeOwnerError(shapeHash)
 		}
 		return 0, DisconnectedError(c.MinerAddr)
@@ -398,7 +398,6 @@ func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	outLog.Printf("Reached OpenCanvas")
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 
