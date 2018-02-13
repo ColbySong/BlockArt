@@ -11,5 +11,3 @@ server/
 **/*.DS_Store
 .idea/
 
-#Art-app
-art-app.go

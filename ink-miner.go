@@ -14,6 +14,7 @@ import (
 	"net/rpc"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,8 @@ import (
 	"./blockartlib"
 	"./blockchain"
 	"./util"
+	"bytes"
+	"crypto/rand"
 )
 
 const HeartbeatMultiplier = 2
@@ -148,6 +151,31 @@ func (m InkMiner) maintainMinerConnections() {
 	}
 }
 
+
+// Broadcast the new operation
+func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
+	pendingOperations.Lock()
+	opRecordHash := computeOpRecordHash(op)
+	if _, exists := pendingOperations.all[opRecordHash]; !exists {
+		// Add operation to pending transaction
+		// TODO : get ink for op
+		pendingOperations.all[opRecordHash] = &blockchain.OpRecord{
+			Op:           op.Op,
+			InkUsed:      op.InkUsed,
+			OpSigS:       op.OpSigS,
+			OpSigR:       op.OpSigR, 
+			AuthorPubKey: op.AuthorPubKey,
+		}
+		pendingOperations.Unlock()
+
+		// Send operation to all connected miners
+		sendToAllConnectedMiners("MServer.DisseminateOperation", op, nil)
+		return nil
+	}
+	pendingOperations.Unlock()
+
+	return nil
+}
 
 
 // This method does not acquire lock; To use this function, acquire lock and then call function
@@ -312,6 +340,20 @@ func computeBlockHash(block blockchain.Block) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
+// Compute the MD5 hash of a OpRecord
+func computeOpRecordHash(opRecord blockchain.OpRecord) string {
+	bytes, err := json.Marshal(opRecord)
+	handleError("Could not marshal block to JSON", err)
+	hash := md5.New()
+	hash.Write(bytes)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func decodeShapeHash(shapeHash string, pubKey ecdsa.PublicKey) bool {
+	//TODO: unsign hash with pub key. Get back true if pub key corresponds to priv key
+	return false
+}
+
 // Verify that a hash ends with some number of zeros
 func verifyTrailingZeros(hash string, numZeros uint8) bool {
 	for i := uint8(0); i < numZeros; i++ {
@@ -335,7 +377,10 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
 	outLog.Printf("Reached AddShape \n")
-	inkRemaining := uint32(0) // TODO: get how much ink the miner has
+	inkRemaining := getInkTraversal(a.inkMiner)
+	if inkRemaining <= 0 {
+		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
+	}
 	requestedSVGPath, _ := util.ConvertPathToPoints(shapeRequest.SvgString)
 	isTransparent := shapeRequest.IsTransparent
 	isClosed := shapeRequest.IsClosed
@@ -358,39 +403,144 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 
 	// if shape is inbound and does not overlap, then calculate the ink required
 	inkRequired := util.CalculateInkRequired(requestedSVGPath, isTransparent, isClosed)
-	if inkRequired < inkRemaining {
+	if inkRequired < uint32(inkRemaining) {
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 
-	// TODO: add to pending operations? call to create block??
-	// populate NewShapeResponse struct with shapeHash, blockHash and inkRemaining
-	// TODO: MINER MUST USE VALIDATENUM AND ONLY RETURN THE SHAPEHASH AND BLOCKHASH WHEN VALIDATE NUM IS SATISFIED
+	// create svg path
+	shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
 
+	// sign the shape
+
+	r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(shapeSvgPathString))
+	handleError("unable to sign shape", err)
+
+	opRecord := blockchain.OpRecord{
+		Op:           shapeSvgPathString,
+		OpSigS:       s,
+		OpSigR:       r,
+		InkUsed:      inkRequired,
+		AuthorPubKey: *a.inkMiner.pubKey,
+	}
+
+	opRecordHash := computeOpRecordHash(opRecord)
+
+	a.inkMiner.broadcastNewOperation(opRecord)
+
+	// TODO: ping to see if validated according to validateNum
+	blockHash := blockChain.NewestHash
+
+	newShapeResp.ShapeHash = opRecordHash
+	newShapeResp.BlockHash = blockHash
+	newShapeResp.InkRemaining = 0 // call get ink?
 	return nil
 }
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 	outLog.Printf("Reached GetSvgString\n")
-	// TODO: traverse blockchain to get svgstring by shapehash
+	if opRecord, exists := getOpRecord(shapeHash, a.inkMiner); exists {
+		*svgString = opRecord.Op
+		return nil
+	}
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDSHAPEHASH])
+}
+
+func getOpRecord(shapeHash string, inkMiner *InkMiner) (blockchain.OpRecord, bool) {
+	newestHash := blockChain.NewestHash
+	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash ; blockHash = blockChain.Blocks[blockHash].PrevHash {
+		block := blockChain.Blocks[blockHash]
+		if len(block.OpRecords) > 0 {
+			if opRecord, exists := block.OpRecords[shapeHash]; exists {
+				return *opRecord, true
+			}
+		}
+	}
+	return blockchain.OpRecord{}, false
 }
 
 func (a *MArtNode) GetInk(ignoredreq bool, inkRemaining *uint32) error {
 	outLog.Printf("Reached GetInk\n")
-	// TODO: inkRemaining, an attribute in InkMiner struct? or get info
-	// by looking thru entire blockchain..
+	ink := getInkTraversal(a.inkMiner)
+	if ink < 0 {
+		fmt.Printf("Get ink got back negative ink %d", *inkRemaining)
+	}
+	*inkRemaining = uint32(ink)
 	return nil
 }
 
-func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRemaining *uint8) error {
-	outLog.Printf("Reached DeleteShape\n")
-	// wait until delete is confirmed before updating ink remaining
-	// TODO: traverse blockchain and look for operation with incoming shapeHash
-	// and check if is owner (matching pub key)
-	// then wait for validationNum to be fulfilled
+func concatStrings(strArray []string) string {
+	var buf bytes.Buffer
+	for i := 0; i < len(strArray); i++ {
+		buf.WriteString(strArray[i])
+	}
+	return buf.String()
+}
 
-	//return ShapeOwnerErr
-	return nil
+func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRemaining *uint32) error {
+	outLog.Printf("Reached DeleteShape\n")
+
+	if opRecord, exists := getOpRecord(deleteShapeReq.ShapeHash, a.inkMiner); exists {
+		if reflect.DeepEqual(opRecord.AuthorPubKey, a.inkMiner.pubKey) {
+			newOp := concatStrings([]string{"delete ", opRecord.Op})
+
+			// sign the shape
+			r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(newOp))
+			handleError("unable to sign shape", err)
+
+			// TODO: add in inkrequired
+			newOpRecord := blockchain.OpRecord{
+				Op: newOp,
+				OpSigS: s,
+				OpSigR: r,
+				AuthorPubKey: *a.inkMiner.pubKey,
+			}
+			a.inkMiner.broadcastNewOperation(newOpRecord)
+
+			// TODO: ping to see if validated according to validateNum
+
+			ink := getInkTraversal(a.inkMiner)
+
+			if ink < 0 {
+				fmt.Printf("Delete Shape: got back negative ink")
+			}
+			*inkRemaining = uint32(ink)
+			return nil
+		}
+	}
+	return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOWNER])
+
+}
+
+func getInkTraversal(inkMiner *InkMiner) int {
+	inkRemaining := 0
+	newestHash := blockChain.NewestHash
+	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
+		block := blockChain.Blocks[blockHash]
+		if len(block.OpRecords) == 0 { // NoOp block
+			if reflect.DeepEqual(block.MinerPubKey, inkMiner.pubKey) {
+				inkRemaining += int(inkMiner.settings.InkPerNoOpBlock)
+			}
+		} else { // Op Block
+			if reflect.DeepEqual(block.MinerPubKey, inkMiner.pubKey) {
+				inkRemaining += int(inkMiner.settings.InkPerOpBlock)
+				for _, opRecord := range block.OpRecords {
+					if reflect.DeepEqual(opRecord.AuthorPubKey, inkMiner.pubKey) {
+						if isOpDelete(opRecord.Op) { // Delete block
+							inkRemaining += int(opRecord.InkUsed)
+						} else { // Add block
+							inkRemaining -= int(opRecord.InkUsed)
+						}
+					}
+				}
+			}
+		}
+	}
+	return inkRemaining
+}
+
+func isOpDelete(shapeSvgHashString string) bool {
+	buf := strings.Split(shapeSvgHashString, " ")
+	return strings.EqualFold(buf[0], "delete")
 }
 
 func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
@@ -402,8 +552,8 @@ func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 	if block, ok := blockChain.Blocks[blockHash]; ok {
 		shapeHashes := make([]string, len(block.OpRecords))
 		var i = 0
-		for hash := range block.OpRecords {
-			shapeHashes[i] = hash
+		for _, v := range block.OpRecords {
+			shapeHashes[i] = v.Op
 			i++
 		}
 		return nil

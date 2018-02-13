@@ -105,7 +105,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 		errLog.Printf("Invalid block received: no previous block found\n")
 		return false
 	}
-	
+
 	isNextBlock := block.BlockNum == prevBlock.BlockNum + 1
 	if !isNextBlock {
 		errLog.Printf("Invalid block received: invalid BlockNum [%d]\n", block.BlockNum)
