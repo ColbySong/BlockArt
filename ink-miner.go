@@ -21,12 +21,13 @@ import (
 	"crypto/md5"
 	"encoding/json"
 
+	"bytes"
+	"crypto/rand"
+
 	"./args"
 	"./blockartlib"
 	"./blockchain"
 	"./util"
-	"bytes"
-	"crypto/rand"
 )
 
 const HeartbeatMultiplier = 2
@@ -151,7 +152,6 @@ func (m InkMiner) maintainMinerConnections() {
 	}
 }
 
-
 // Broadcast the new operation
 func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord, opRecordHash string) error {
 	pendingOperations.Lock()
@@ -176,7 +176,6 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord, opRecordHash str
 	return nil
 }
 
-
 // This method does not acquire lock; To use this function, acquire lock and then call function
 func saveBlockToBlockChain(block blockchain.Block) {
 	blockHash := ComputeBlockHash(block)
@@ -187,6 +186,8 @@ func saveBlockToBlockChain(block blockchain.Block) {
 	if block.BlockNum > blockChain.Blocks[blockChain.NewestHash].BlockNum {
 		blockChain.NewestHash = blockHash
 	}
+
+	removeOperationsFromPendingOperations(block.OpRecords)
 }
 
 func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
@@ -310,11 +311,18 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 
 // Broadcast the newly-mined block to the miner network, and clear the operations that were included in it.
 func broadcastNewBlock(block blockchain.Block) error {
+	removeOperationsFromPendingOperations(block.OpRecords)
 
-	// TODO - clear ops that are included in this block, but only if confident that they
-	// TODO   will be part of the main chain
-	 sendToAllConnectedMiners("MServer.DisseminateBlock", block, nil)
+	sendToAllConnectedMiners("MServer.DisseminateBlock", block, nil)
 	return nil
+}
+
+func removeOperationsFromPendingOperations(opRecords map[string]*blockchain.OpRecord) {
+	pendingOperations.Lock()
+	for opHash := range opRecords {
+		delete(pendingOperations.all, opHash)
+	}
+	pendingOperations.Unlock()
 }
 
 // Generic method to send RPC to all peers
@@ -419,7 +427,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	a.inkMiner.broadcastNewOperation(opRecord, opRecordHash)
 
 	// wait until return from validateNum validation
-	if blockHash, validated := IsValidatedByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated{
+	if blockHash, validated := IsValidatedByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated {
 		newShapeResp.ShapeHash = opRecordHash
 		newShapeResp.BlockHash = blockHash
 		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
@@ -463,7 +471,7 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 	outLog.Printf("Reached DeleteShape\n")
 
 	if opRecord, _, exists := GetOpRecordTraversal(deleteShapeReq.ShapeHash, a.inkMiner.settings.GenesisBlockHash); exists {
-		if VerifyOpRecordAuthor(*a.inkMiner.pubKey, opRecord){
+		if VerifyOpRecordAuthor(*a.inkMiner.pubKey, opRecord) {
 			newOp := concatStrings([]string{"delete ", opRecord.Op})
 
 			// sign the shape
@@ -473,10 +481,10 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 			inkRefunded := opRecord.InkUsed
 
 			newOpRecord := blockchain.OpRecord{
-				Op: newOp,
-				InkUsed: inkRefunded,
-				OpSigS: s,
-				OpSigR: r,
+				Op:           newOp,
+				InkUsed:      inkRefunded,
+				OpSigS:       s,
+				OpSigR:       r,
 				AuthorPubKey: *a.inkMiner.pubKey,
 			}
 			opRecordHash := ComputeOpRecordHash(newOpRecord)
@@ -515,8 +523,8 @@ func IsValidatedByValidateNum(opRecordHash string, validateNum uint8, genesisBlo
 			for {
 				if opRecord, blockHash, exists := GetOpRecordTraversal(opRecordHash, genesisBlockHash); exists {
 					blockNumOfOp := blockChain.Blocks[blockHash].BlockNum
-					newestBlockNum  := blockChain.Blocks[blockChain.NewestHash].BlockNum
-					if newestBlockNum - blockNumOfOp >= uint32(validateNum) {
+					newestBlockNum := blockChain.Blocks[blockChain.NewestHash].BlockNum
+					if newestBlockNum-blockNumOfOp >= uint32(validateNum) {
 						if VerifyOpRecordAuthor(*pubKey, opRecord) {
 							return blockHash, true
 						}
@@ -535,7 +543,7 @@ func IsValidatedByValidateNum(opRecordHash string, validateNum uint8, genesisBlo
 // Return true if the miner's public key matches author's public key of the OpRecord
 // and also decodes the opSigS and opSigR of the opRecord to verify it was signed by the author
 // listed in the OpRecord
-func VerifyOpRecordAuthor(requestorPublicKey ecdsa.PublicKey , opRecord blockchain.OpRecord) bool {
+func VerifyOpRecordAuthor(requestorPublicKey ecdsa.PublicKey, opRecord blockchain.OpRecord) bool {
 	return reflect.DeepEqual(requestorPublicKey, opRecord.AuthorPubKey) &&
 		ecdsa.Verify(&opRecord.AuthorPubKey, []byte(opRecord.Op), opRecord.OpSigR, opRecord.OpSigS)
 }
@@ -544,7 +552,7 @@ func VerifyOpRecordAuthor(requestorPublicKey ecdsa.PublicKey , opRecord blockcha
 // if true, also return the opRecord and the corresponding blockHash of the block that the shapeHash is contained in
 func GetOpRecordTraversal(shapeHash string, genesisBlockHash string) (blockchain.OpRecord, string, bool) {
 	newestHash := blockChain.NewestHash
-	for blockHash := newestHash; blockHash != genesisBlockHash ; blockHash = blockChain.Blocks[blockHash].PrevHash {
+	for blockHash := newestHash; blockHash != genesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
 		block := blockChain.Blocks[blockHash]
 		if len(block.OpRecords) > 0 {
 			if opRecord, exists := block.OpRecords[shapeHash]; exists {
@@ -678,7 +686,7 @@ func isOpDelete(shapeSvgString string) bool {
 	return strings.EqualFold(buf[0], "delete")
 }
 
-func miscErr (msg string) error {
+func miscErr(msg string) error {
 	var buf bytes.Buffer
 	buf.WriteString(blockartlib.ErrorName[blockartlib.MISC])
 	buf.WriteString(" ")
