@@ -48,7 +48,7 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
 	pendingOperations.Lock()
 
-	opRecordHash := computeOpRecordHash(op)
+	opRecordHash := ComputeOpRecordHash(op)
 	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
 		// TODO : get ink for op
@@ -87,7 +87,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	blockChain.Lock() // TODO - this is also locked by the caller, what will happen?
 	defer blockChain.Unlock()
 
-	hash := computeBlockHash(block)
+	hash := ComputeBlockHash(block)
 
 	// 0. Check that this block isn't already part of the local blockChain
 	_, alreadyExists := blockChain.Blocks[hash]
