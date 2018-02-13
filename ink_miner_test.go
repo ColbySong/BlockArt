@@ -174,7 +174,8 @@ func TestGetShapesTraversal(t *testing.T) {
 }
 
 func TestGetShapeTraversal(t *testing.T) {
-	// setUpBlockChain()
-	// TODO: Add test for traversing the tree to get a svg specified by shapeHash
-
+	setUpBlockChain()
+	if opRecs, _ := GetOpRecordTraversal(opRecThreeHash, &mockInkMiner, blockChainMock); !reflect.DeepEqual(opRecs, minerTwoOpRecord) {
+		t.Errorf("Expected opRecords for %s: %+v, but got %+v", opRecThreeHash, opRecs, minerTwoOpRecord)
+	}
 }
