@@ -169,6 +169,7 @@ func hasValidOperations(ops map[string]*blockchain.OpRecord) bool {
 
 // Downloads the entire BlockChain from all connected miners and updates the local
 // version with the majority copy. If tie, pick the one with highest block num.
+// If multiple contain highest block num, pick one at random.
 func updateBlockChain() {
 	blockChains := getBlockChainsFromNeighbours()
 
@@ -194,6 +195,7 @@ func updateBlockChain() {
 	}
 
 	if len(hashCount) == 0 {
+		// hashCount will be empty if all hashes equal maxCount (ie. all hashes were unique)
 		// Pick the one with largest block num from original list
 		currLargestBlockNum := uint32(0)
 		var currLongestBlockChain blockchain.BlockChain
@@ -208,6 +210,7 @@ func updateBlockChain() {
 		blockChain = currLongestBlockChain
 	} else {
 		// Out of the ties, pick the one with the largest block num
+		// If there are multiple, pick the first one encountered
 		currLargestBlockNum := uint32(0)
 		var currLongestBlockChain blockchain.BlockChain
 
