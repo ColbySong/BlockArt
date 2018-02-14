@@ -1,6 +1,12 @@
 package main
 
-import "./blockchain"
+import (
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+
+	"./blockchain"
+)
 
 // RPC Target
 // Disseminate Block to connected miners, if it passes validation.
@@ -43,7 +49,6 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 	return nil
 }
 
-
 // RPC Target
 func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) error {
 	pendingOperations.Lock()
@@ -81,7 +86,6 @@ func (s *MServer) GetBlockChain(_ignore bool, bc *blockchain.BlockChain) error {
 	return nil
 }
 
-
 // Checks if a block is valid, including its operations.
 func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	blockChain.Lock() // TODO - this is also locked by the caller, what will happen?
@@ -96,10 +100,11 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 		return false
 	}
 
-
 	// 1. Check for valid block num
 	prevBlock, prevBlockExistsLocally := blockChain.Blocks[block.PrevHash]
-	if !prevBlockExistsLocally {updateBlockChain()}
+	if !prevBlockExistsLocally {
+		s.updateBlockChain()
+	}
 
 	prevBlock, prevBlockExistsLocally = blockChain.Blocks[block.PrevHash]
 	if !prevBlockExistsLocally {
@@ -107,7 +112,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 		return false
 	}
 
-	isNextBlock := block.BlockNum == prevBlock.BlockNum + 1
+	isNextBlock := block.BlockNum == prevBlock.BlockNum+1
 	if !isNextBlock {
 		errLog.Printf("Invalid block received: invalid BlockNum [%d]\n", block.BlockNum)
 		return false
@@ -136,7 +141,6 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	return true
 }
 
-
 func switchToLongestBranch() string {
 	// TODO - how are we gonna handle locking this?
 	blockChain.Lock()
@@ -155,6 +159,7 @@ func switchToLongestBranch() string {
 	blockChain.NewestHash = newestHash
 	return newestHash
 }
+
 // Checks if ALL operations as a set can be executed.
 // Must check for ink level and shape overlap.
 func hasValidOperations(ops map[string]*blockchain.OpRecord) bool {
@@ -162,9 +167,93 @@ func hasValidOperations(ops map[string]*blockchain.OpRecord) bool {
 	return true
 }
 
+// Update local block chain and pending operations if majority block chain
+// is different from current local block chain
+func (s *MServer) updateBlockChain() {
+	majorityBlockChain := getMajorityBlockChainFromNeighbours()
+	majorityBlockChainHash := computeBlockChainHash(majorityBlockChain)
+
+	if majorityBlockChainHash != computeBlockChainHash(blockChain) {
+		blockChain = majorityBlockChain
+		s.updatePendingOperations()
+	}
+}
+
 // Downloads the entire BlockChain from all connected miners and updates the local
-// version with the majority copy.
-func updateBlockChain() {
-	_ = getBlockChainsFromNeighbours()
-	// TODO - update global variable to match majority value from the response
+// version with the majority copy (including itself).
+// If tie, pick the one with highest block num.
+// If multiple contain highest block num, pick one at random.
+// Returns the majority block chain
+func getMajorityBlockChainFromNeighbours() blockchain.BlockChain {
+	blockChains := getBlockChainsFromNeighbours()
+
+	// Add own block chain
+	blockChains = append(blockChains, &blockChain)
+
+	hashToBlockChain := make(map[string]blockchain.BlockChain)
+	hashCount := make(map[string]int)
+
+	maxCount := 0
+	for _, bc := range blockChains {
+		hash := computeBlockChainHash(*bc)
+		hashToBlockChain[hash] = *bc
+		hashCount[hash] = hashCount[hash] + 1
+
+		if hashCount[hash] > maxCount {
+			maxCount = hashCount[hash]
+		}
+	}
+
+	// Remove hashes lower than maxCount
+	for hash, count := range hashCount {
+		if count < maxCount {
+			delete(hashCount, hash)
+		}
+	}
+
+	currLargestBlockNum := uint32(0)
+	currLongestBlockChain := blockChain
+
+	if len(hashCount) == 0 {
+		// hashCount will be empty if all hashes equal maxCount (ie. all hashes were unique)
+		// Pick the one with largest block num from original list
+		for _, bc := range blockChains {
+			if bc.Blocks[bc.NewestHash].BlockNum > currLargestBlockNum {
+				currLargestBlockNum = bc.Blocks[bc.NewestHash].BlockNum
+				currLongestBlockChain = *bc
+			}
+		}
+	} else {
+		// Out of the ties, pick the one with the largest block num
+		// If there are multiple, pick the first one encountered
+		for hash := range hashCount {
+			bc := hashToBlockChain[hash]
+			if bc.Blocks[bc.NewestHash].BlockNum > currLargestBlockNum {
+				currLargestBlockNum = bc.Blocks[bc.NewestHash].BlockNum
+				currLongestBlockChain = bc
+			}
+		}
+	}
+
+	return currLongestBlockChain
+}
+
+// Traverse block chain and remove operations from pendingOperations
+func (s *MServer) updatePendingOperations() {
+	allOps := GetAllOperationsFromBlockChain(blockChain, s.inkMiner.settings.GenesisBlockHash)
+
+	pendingOperations.Lock()
+	for opHash := range allOps {
+		delete(pendingOperations.all, opHash)
+	}
+	pendingOperations.Unlock()
+}
+
+func computeBlockChainHash(blockChain blockchain.BlockChain) string {
+	bytes, err := json.Marshal(blockChain)
+	handleError("Could not marshal blockchain to JSON", err)
+
+	hash := md5.New()
+	hash.Write(bytes)
+	return hex.EncodeToString(hash.Sum(nil))
 }
