@@ -9,6 +9,7 @@ import (
 
 	"testing"
 	"reflect"
+	"strings"
 )
 
 const GENESIS_BLOCK_HASH = "83218ac34c1834c26781fe4bde918ee4"
@@ -110,6 +111,7 @@ var blockFourHash = ComputeBlockHash(opBlockMinerTwo)
 
 var blockChainMock blockchain.BlockChain
 
+
 func setUpBlockChain() {
 	opRecordsBlockThree[opRecOneHash] = &minerOneOpRecordOne
 	opRecordsBlockThree[opRecTwoHash] = &minerOneOpRecordTwo
@@ -125,6 +127,10 @@ func setUpBlockChain() {
 		Blocks: blocks,
 		NewestHash: blockFourHash,
 	}
+
+	//init global vars
+	pendingOperations = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
+	blockChain = blockChainMock
 
 	// Traverses the chain and print out content of each block in the chain
 	//newestHash := blockChainMock.NewestHash
@@ -173,9 +179,20 @@ func TestGetShapesTraversal(t *testing.T) {
 	}
 }
 
-func TestGetShapeTraversal(t *testing.T) {
+func TestGetOpRecordTraversal(t *testing.T) {
 	setUpBlockChain()
-	if _, opRecs, _ := GetOpRecordTraversal(opRecThreeHash, mockInkMiner.settings.GenesisBlockHash., blockChainMock); !reflect.DeepEqual(opRecs, minerTwoOpRecord) {
-		t.Errorf("Expected opRecords for %s: %+v, but got %+v", opRecThreeHash, opRecs, minerTwoOpRecord)
+	opRec, blockHash, exists := GetOpRecordTraversal(opRecThreeHash, mockInkMiner.settings.GenesisBlockHash, blockChainMock)
+	if !reflect.DeepEqual(opRec, minerTwoOpRecord) || !reflect.DeepEqual(blockHash, blockFourHash) ||!exists {
+		t.Errorf("Expected opRecord for %s: %+v, but got %+v; and expected blockHash %s, but got %s", opRecThreeHash, minerTwoOpRecord, opRec, blockFourHash, blockHash)
+	}
+}
+
+
+func TestIsValidatedByValidateNumOf1(t *testing.T) {
+	setUpBlockChain()
+	blockHash, validated := IsValidatedByValidateNum(opRecOneHash, 1, mockInkMiner.settings.GenesisBlockHash, &minerOnePublicKey)
+	if !strings.EqualFold(blockHash, blockThreeHash) || !validated {
+		t.Errorf("Expected opRecordHash %s with validateNum of %d to be validated: %d, but got %d" +
+			";and to be in block with blockhash: %s, but got %s ", opRecOneHash, true, validated, blockThreeHash, blockHash)
 	}
 }

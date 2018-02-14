@@ -348,11 +348,6 @@ func ComputeOpRecordHash(opRecord blockchain.OpRecord) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func decodeShapeHash(shapeHash string, pubKey ecdsa.PublicKey) bool {
-	//TODO: unsign hash with pub key. Get back true if pub key corresponds to priv key
-	return false
-}
-
 // Verify that a hash ends with some number of zeros
 func verifyTrailingZeros(hash string, numZeros uint8) bool {
 	for i := uint8(0); i < numZeros; i++ {
@@ -425,7 +420,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	a.inkMiner.broadcastNewOperation(opRecord, opRecordHash)
 
 	// wait until return from validateNum validation
-	if blockHash, validated := validateByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated{
+	if blockHash, validated := IsValidatedByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated{
 		newShapeResp.ShapeHash = opRecordHash
 		newShapeResp.BlockHash = blockHash
 		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
@@ -489,7 +484,7 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 			a.inkMiner.broadcastNewOperation(newOpRecord, opRecordHash)
 
 			// wait until return from validateNum validation
-			if _, validated := validateByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); !validated {
+			if _, validated := IsValidatedByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); !validated {
 				newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
 
 				if newInkRemaining < 0 {
@@ -506,17 +501,18 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 
 }
 
-func validateByValidateNum(opRecordHash string, validateNum uint8, genesisBlockHash string, pubKey *ecdsa.PublicKey) (string, bool) {
-	// take off pending list and in waiting validation list => op in block
-	// check for opRecordHash using getOpRecord
-	// case 0: if found then it was added to blockchain
-	// so get blockNum, then check again if still there when
-	// blockNum+blockNumToValidate is passed/reached (depending how often you're checking)
-	// if not there anymore, then it was not validated and
-	// longest chain updated
-	// case 1: if not found then it was denied so return false
-	//TODO: need to lock when periodically checking blockchain?
 
+// 1) Wait until op is taken off pending list => this means op has been incorporated into a block
+// 2) Find the opRecord in the longest chain (of the artnode's miner),
+// 3) and check if it has at least validateNum # of blocks following it
+// 4) if it doesn't meet validateNum # of blocks following it yet, periodically repeat steps 2-3
+// case 0: if during a check, it does have validateNum # of blocks following it, return the blockHash of the block
+//         the op was incorporated in AND return true
+// case 1: if during a check, the op is no longer found in the longest chain, then it means it was
+//    	   rejected because either the artnode's miner is malicious or was building off the wrong chain to begin with.
+//    	   In this case, the op is lost and we return false
+func IsValidatedByValidateNum(opRecordHash string, validateNum uint8, genesisBlockHash string, pubKey *ecdsa.PublicKey) (string, bool) {
+	//TODO: need to lock when periodically checking blockchain?
 	for {
 		if _, exists := pendingOperations.all[opRecordHash]; !exists {
 			for {
@@ -531,16 +527,18 @@ func validateByValidateNum(opRecordHash string, validateNum uint8, genesisBlockH
 				} else {
 					return "", false
 				}
-				time.Sleep(30 * time.Second)
+				time.Sleep(2 * time.Second) //TODO: what's an optimal time to check?
 			}
 		}
-		time.Sleep(30 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
 	return "", false
 }
 
-
-func VerifyOpRecordAuthor (requestorPublicKey ecdsa.PublicKey , opRecord blockchain.OpRecord) bool {
+// Return true if the miner's public key matches author's public key of the OpRecord
+// and also decodes the opSigS and opSigR of the opRecord to verify it was signed by the author
+// listed in the OpRecord
+func VerifyOpRecordAuthor(requestorPublicKey ecdsa.PublicKey , opRecord blockchain.OpRecord) bool {
 	if reflect.DeepEqual(requestorPublicKey, opRecord.AuthorPubKey) &&
 		ecdsa.Verify(&opRecord.AuthorPubKey, []byte(opRecord.Op), opRecord.OpSigR, opRecord.OpSigS) {
 			return true
