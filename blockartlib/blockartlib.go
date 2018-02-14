@@ -166,6 +166,7 @@ const (
 	INVALIDPRIVKEY
 	INVALIDBLOCKHASH
 	SHAPEOWNER
+	MISC
 )
 
 var ErrorName = []string{
@@ -174,6 +175,7 @@ var ErrorName = []string{
 	INVALIDPRIVKEY:   "INVALIDPRIVKEY",
 	INVALIDBLOCKHASH: "INVALIDBLOCKHASH",
 	SHAPEOWNER:       "SHAPEOWNER",
+	MISC: "MISCERROR:",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -292,7 +294,11 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 
 	resp := NewShapeResponse{}
 	if err = c.MinerRPC.Call("MArtNode.AddShape", addShapeRequest, &resp); err != nil {
-		switch errorStr := err.Error(); errorStr {
+		errorStr := err.Error()
+		if strings.HasPrefix(errorStr, ErrorName[MISC]) {
+			return "", "", 0, err
+		}
+		switch errorStr {
 		case ErrorName[INSUFFICIENTINK]:
 			return "", "", 0, InsufficientInkError(resp.InkRemaining)
 		case util.ShapeErrorName[util.SHAPEOVERLAP]:
@@ -304,7 +310,6 @@ func (c CanvasStruct) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgS
 			return "", "", 0, DisconnectedError(c.MinerAddr)
 		}
 	}
-
 	return resp.ShapeHash, resp.BlockHash, resp.InkRemaining, nil
 }
 
@@ -335,7 +340,11 @@ func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemai
 		ShapeHash:   shapeHash}
 	err = c.MinerRPC.Call("MArtNode.DeleteShape", req, &inkRemaining)
 	if err != nil {
-		if strings.EqualFold(err.Error(), ErrorName[SHAPEOWNER]) {
+		errorStr := err.Error()
+		if strings.HasPrefix(errorStr, ErrorName[MISC]) {
+			return 0, err
+		}
+		if strings.EqualFold(errorStr, ErrorName[SHAPEOWNER]) {
 			return 0, ShapeOwnerError(shapeHash)
 		}
 		return 0, DisconnectedError(c.MinerAddr)

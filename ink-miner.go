@@ -424,12 +424,12 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 		newShapeResp.BlockHash = blockHash
 		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 		if inkRemaining < 0 {
-			fmt.Sprintf("AddShape: Shouldn't have negative ink after successful implementation of block")
+			return miscErr("AddShape: Shouldn't have negative ink after successful implementation of block")
 		}
 		newShapeResp.InkRemaining = uint32(inkRemaining)
 		return nil
 	}
-	return errors.New("AddShape was unsuccessful")
+	return miscErr("AddShape was unsuccessful")
 }
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
@@ -487,19 +487,17 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 				newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 
 				if newInkRemaining < 0 {
-					fmt.Printf("DeleteShape: Shouldn't have negative ink after successful implementation of block")
-					return nil
+					return miscErr("DeleteShape: Shouldn't have negative ink after successful implementation of block")
 				}
 				*inkRemaining = uint32(newInkRemaining)
 				return nil
 			}
-			return errors.New("Delete Shape was unsuccessful")
+			return miscErr("Delete Shape was unsuccessful")
 		}
 	}
 	return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOWNER])
 
 }
-
 
 // 1) Wait until op is taken off pending list => this means op has been incorporated into a block
 // 2) Find the opRecord in the longest chain (of the artnode's miner),
@@ -518,7 +516,7 @@ func IsValidatedByValidateNum(opRecordHash string, validateNum uint8, genesisBlo
 				if opRecord, blockHash, exists := GetOpRecordTraversal(opRecordHash, genesisBlockHash); exists {
 					blockNumOfOp := blockChain.Blocks[blockHash].BlockNum
 					newestBlockNum  := blockChain.Blocks[blockChain.NewestHash].BlockNum
-					if newestBlockNum - blockNumOfOp == uint32(validateNum) {
+					if newestBlockNum - blockNumOfOp >= uint32(validateNum) {
 						if VerifyOpRecordAuthor(*pubKey, opRecord) {
 							return blockHash, true
 						}
@@ -681,4 +679,12 @@ func parsePath(shapeSVGString string) string {
 func isOpDelete(shapeSvgString string) bool {
 	buf := strings.Split(shapeSvgString, " ")
 	return strings.EqualFold(buf[0], "delete")
+}
+
+func miscErr (msg string) error {
+	var buf bytes.Buffer
+	buf.WriteString(blockartlib.ErrorName[blockartlib.MISC])
+	buf.WriteString(" ")
+	buf.WriteString(msg)
+	return errors.New(buf.String())
 }
