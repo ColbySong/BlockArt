@@ -157,11 +157,11 @@ func setUpBlockChain() {
 
 func TestGetInkTraversal(t *testing.T) {
 	setUpBlockChain()
-	if ink := GetInkTraversal(&mockInkMiner, &minerOnePublicKey, blockChainMock); ink != 130 {
+	if ink := GetInkTraversal(&mockInkMiner, &minerOnePublicKey); ink != 130 {
 		t.Errorf("Expected ink for miner 1: 130, but got %d", ink)
 	}
 
-	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey, blockChainMock); ink != 130 {
+	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 130 {
 		t.Errorf("Expected ink for miner 2: 130, but got %d", ink)
 	}
 }
@@ -169,19 +169,19 @@ func TestGetInkTraversal(t *testing.T) {
 func TestGetShapesTraversal(t *testing.T) {
 	setUpBlockChain()
 	shapesDrawnByMinersOtherThanMinerOne := []string{"M 50 50 L 60 60", "M 30 30 L 40 40"}
-	if shapes := GetShapeTraversal(&mockInkMiner, &minerOnePublicKey, blockChainMock); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerOne, shapes) {
+	if shapes := GetShapeTraversal(&mockInkMiner, &minerOnePublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerOne, shapes) {
 		t.Errorf("Expected shapes for miner 1: %v, but got %v", shapesDrawnByMinersOtherThanMinerOne, shapes)
 	}
 
 	shapesDrawnByMinersOtherThanMinerTwo := []string{"M 0 0 L 20 20"}
-	if shapes := GetShapeTraversal(&mockInkMiner, &minerTwoPublicKey, blockChainMock); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerTwo, shapes) {
+	if shapes := GetShapeTraversal(&mockInkMiner, &minerTwoPublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerTwo, shapes) {
 		t.Errorf("Expected shapes for miner 2: %v, but got %v", shapesDrawnByMinersOtherThanMinerTwo, shapes)
 	}
 }
 
 func TestGetOpRecordTraversal(t *testing.T) {
 	setUpBlockChain()
-	opRec, blockHash, exists := GetOpRecordTraversal(opRecThreeHash, mockInkMiner.settings.GenesisBlockHash, blockChainMock)
+	opRec, blockHash, exists := GetOpRecordTraversal(opRecThreeHash, mockInkMiner.settings.GenesisBlockHash)
 	if !reflect.DeepEqual(opRec, minerTwoOpRecord) || !reflect.DeepEqual(blockHash, blockFourHash) ||!exists {
 		t.Errorf("Expected opRecord for %s: %+v, but got %+v; and expected blockHash %s, but got %s", opRecThreeHash, minerTwoOpRecord, opRec, blockFourHash, blockHash)
 	}

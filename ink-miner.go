@@ -68,6 +68,7 @@ var (
 
 // Start the miner.
 func main() {
+	fmt.Printf("IS BLOCKCHAIN EMPTY? %+v", blockChain)
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 
@@ -371,7 +372,7 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
 	outLog.Printf("Reached AddShape \n")
-	inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
+	inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 	if inkRemaining <= 0 {
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
@@ -386,7 +387,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	}
 
 	// check if shape overlaps with shapes from OTHER application
-	currentSVGStringsOnCanvas := GetShapeTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
+	currentSVGStringsOnCanvas := GetShapeTraversal(a.inkMiner, a.inkMiner.pubKey)
 	for _, svgPathString := range currentSVGStringsOnCanvas {
 		svgPath, _ := util.ConvertPathToPoints(svgPathString)
 		if util.CheckOverlap(svgPath, requestedSVGPath) != nil {
@@ -422,7 +423,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	if blockHash, validated := IsValidatedByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated{
 		newShapeResp.ShapeHash = opRecordHash
 		newShapeResp.BlockHash = blockHash
-		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
+		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 		if inkRemaining < 0 {
 			fmt.Sprintf("AddShape: Shouldn't have negative ink after successful implementation of block")
 		}
@@ -434,7 +435,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 	outLog.Printf("Reached GetSvgString\n")
-	if opRecord, _, exists := GetOpRecordTraversal(shapeHash, a.inkMiner.settings.GenesisBlockHash, blockChain); exists {
+	if opRecord, _, exists := GetOpRecordTraversal(shapeHash, a.inkMiner.settings.GenesisBlockHash); exists {
 		*svgString = opRecord.Op
 		return nil
 	}
@@ -443,7 +444,7 @@ func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 
 func (a *MArtNode) GetInk(ignoredreq bool, inkRemaining *uint32) error {
 	outLog.Printf("Reached GetInk\n")
-	ink := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey,blockChain)
+	ink := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 	if ink < 0 {
 		fmt.Printf("Get ink got back negative ink %d", *inkRemaining)
 	}
@@ -462,7 +463,7 @@ func concatStrings(strArray []string) string {
 func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRemaining *uint32) error {
 	outLog.Printf("Reached DeleteShape\n")
 
-	if opRecord, _, exists := GetOpRecordTraversal(deleteShapeReq.ShapeHash, a.inkMiner.settings.GenesisBlockHash, blockChain); exists {
+	if opRecord, _, exists := GetOpRecordTraversal(deleteShapeReq.ShapeHash, a.inkMiner.settings.GenesisBlockHash); exists {
 		if VerifyOpRecordAuthor(*a.inkMiner.pubKey, opRecord){
 			newOp := concatStrings([]string{"delete ", opRecord.Op})
 
@@ -484,7 +485,7 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 
 			// wait until return from validateNum validation
 			if _, validated := IsValidatedByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); !validated {
-				newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
+				newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 
 				if newInkRemaining < 0 {
 					fmt.Printf("DeleteShape: Shouldn't have negative ink after successful implementation of block")
@@ -515,7 +516,7 @@ func IsValidatedByValidateNum(opRecordHash string, validateNum uint8, genesisBlo
 	for {
 		if _, exists := pendingOperations.all[opRecordHash]; !exists {
 			for {
-				if opRecord, blockHash, exists := GetOpRecordTraversal(opRecordHash, genesisBlockHash, blockChain); exists {
+				if opRecord, blockHash, exists := GetOpRecordTraversal(opRecordHash, genesisBlockHash); exists {
 					blockNumOfOp := blockChain.Blocks[blockHash].BlockNum
 					newestBlockNum  := blockChain.Blocks[blockChain.NewestHash].BlockNum
 					if newestBlockNum - blockNumOfOp == uint32(validateNum) {
@@ -547,7 +548,7 @@ func VerifyOpRecordAuthor(requestorPublicKey ecdsa.PublicKey , opRecord blockcha
 
 // given the shapeHash, return true if it is in the longest chain of the blockchain
 // if true, also return the opRecord and the corresponding blockHash of the block that the shapeHash is contained in
-func GetOpRecordTraversal(shapeHash string, genesisBlockHash string, blockChain blockchain.BlockChain) (blockchain.OpRecord, string, bool) {
+func GetOpRecordTraversal(shapeHash string, genesisBlockHash string) (blockchain.OpRecord, string, bool) {
 	newestHash := blockChain.NewestHash
 	for blockHash := newestHash; blockHash != genesisBlockHash ; blockHash = blockChain.Blocks[blockHash].PrevHash {
 		block := blockChain.Blocks[blockHash]
@@ -561,7 +562,7 @@ func GetOpRecordTraversal(shapeHash string, genesisBlockHash string, blockChain 
 }
 
 // returns the amount of ink owned by @param pubKey
-func GetInkTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey, blockChain blockchain.BlockChain) int {
+func GetInkTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey) int {
 	inkRemaining := 0
 	newestHash := blockChain.NewestHash
 	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
@@ -590,7 +591,7 @@ func GetInkTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey, blockChain blo
 
 // returns all the shapes on the canvas EXCEPT the ones drawn by @param pubKey
 // strings are in the form of "M 0 0 L 50 50"
-func GetShapeTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey, blockChain blockchain.BlockChain) []string {
+func GetShapeTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey) []string {
 	newestHash := blockChain.NewestHash
 	var shapesDrawnByOtherApps []string
 	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
