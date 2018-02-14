@@ -416,7 +416,6 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 	}
 
 	opRecordHash := ComputeOpRecordHash(opRecord)
-
 	a.inkMiner.broadcastNewOperation(opRecord, opRecordHash)
 
 	// wait until return from validateNum validation

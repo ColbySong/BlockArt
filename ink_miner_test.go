@@ -187,12 +187,28 @@ func TestGetOpRecordTraversal(t *testing.T) {
 	}
 }
 
-
 func TestIsValidatedByValidateNumOf1(t *testing.T) {
 	setUpBlockChain()
 	blockHash, validated := IsValidatedByValidateNum(opRecOneHash, 1, mockInkMiner.settings.GenesisBlockHash, &minerOnePublicKey)
 	if !strings.EqualFold(blockHash, blockThreeHash) || !validated {
 		t.Errorf("Expected opRecordHash %s with validateNum of %d to be validated: %d, but got %d" +
 			";and to be in block with blockhash: %s, but got %s ", opRecOneHash, true, validated, blockThreeHash, blockHash)
+	}
+}
+
+func TestVerifyOpRecordAuthor(t *testing.T) {
+	setUpBlockChain()
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerTwoOpRecord); !authorVerified {
+		t.Errorf("Expected author with pub key %+v to be verified for opRecord %v", minerTwoPublicKey, minerTwoOpRecord)
+	}
+
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
+		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
+	}
+
+	// if miner two was malicious and changed the author public key to it's own, author verification should fail for the opRecord
+	minerOneOpRecordOne.AuthorPubKey = minerTwoPublicKey
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
+		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
 	}
 }
