@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"reflect"
 )
 
 // SHAPE ERRORS
@@ -140,6 +141,10 @@ func CheckOutOfBounds(svgPath SVGPathCoordinates, canvasXMax uint32, canvasYMax 
 
 // Return true if two svgPath overlaps
 func CheckOverlap(svgPathOne SVGPathCoordinates, svgPathTwo SVGPathCoordinates) error {
+	if reflect.DeepEqual(svgPathOne, svgPathTwo) {
+		return errors.New(ShapeErrorName[SHAPEOVERLAP])
+	}
+
 	for i := 0; i < len(svgPathOne.XCords)-1; i++ {
 		p1 := Point{xCord: svgPathOne.XCords[i], yCord: svgPathOne.YCords[i]}
 		p2 := Point{xCord: svgPathOne.XCords[i+1], yCord: svgPathOne.YCords[i+1]}

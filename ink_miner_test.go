@@ -18,6 +18,8 @@ const RANDOM_NONCE = 1 // just putting a random nonce in the block since we are 
 const SVG_OP_ONE = "<path d=\"M 0 0 L 20 20\" stroke=\"red\" fill=\"transparent\"/>"
 const SVG_OP_TWO = "<path d=\"M 30 30 L 40 40\" stroke=\"red\" fill=\"transparent\"/>"
 const SVG_OP_THREE = "<path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
+const SVG_INVALID_OP_ONE = "<path d=\"M 30 30 L 30 800\" stroke=\"red\" fill=\"transparent\"/>"
+const SVG_VALID_OP_ONE = "<path d=\"M 300 300 L 310 310\" stroke=\"red\" fill=\"transparent\"/>"
 
 var p256 = elliptic.P256()
 var minerOnePrivateKey, _ = ecdsa.GenerateKey(p256, rand.Reader)
@@ -28,6 +30,7 @@ var mockInkMiner = InkMiner{
 	settings: &minerNetSettings,
 }
 var minerNetSettings = blockartlib.MinerNetSettings{
+	CanvasSettings: blockartlib.CanvasSettings{ CanvasYMax: 1000, CanvasXMax: 1000 },
 	GenesisBlockHash: GENESIS_BLOCK_HASH,
 	InkPerNoOpBlock:  50,
 	InkPerOpBlock:    100,
@@ -217,6 +220,32 @@ func TestVerifyOpRecordAuthor(t *testing.T) {
 	minerOneOpRecordOne.AuthorPubKey = minerTwoPublicKey
 	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
 		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
+	}
+}
+
+func TestIsValidOperation(t *testing.T) {
+	setUpBlockChain()
+	minerOneInvalidOp := blockchain.OpRecord{
+		Op: SVG_INVALID_OP_ONE,
+		InkUsed: 900,
+		OpSigR: r1,
+		OpSigS: s1,
+		AuthorPubKey: minerOnePublicKey,
+	}
+	minerOneValidOp := blockchain.OpRecord{
+		Op: SVG_VALID_OP_ONE,
+		InkUsed: 10,
+		OpSigR: r1,
+		OpSigS: s1,
+		AuthorPubKey: minerOnePublicKey,
+	}
+
+	if isValidOperation(&mockInkMiner, minerOneInvalidOp) {
+		t.Error("Expected isValidOperation to return false, but returned true")
+	}
+
+	if !isValidOperation(&mockInkMiner, minerOneValidOp) {
+		t.Error("Expected isValidOperation to return true, but returned false")
 	}
 }
 
