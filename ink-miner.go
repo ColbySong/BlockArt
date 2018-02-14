@@ -536,11 +536,8 @@ func IsValidatedByValidateNum(opRecordHash string, validateNum uint8, genesisBlo
 // and also decodes the opSigS and opSigR of the opRecord to verify it was signed by the author
 // listed in the OpRecord
 func VerifyOpRecordAuthor(requestorPublicKey ecdsa.PublicKey , opRecord blockchain.OpRecord) bool {
-	if reflect.DeepEqual(requestorPublicKey, opRecord.AuthorPubKey) &&
-		ecdsa.Verify(&opRecord.AuthorPubKey, []byte(opRecord.Op), opRecord.OpSigR, opRecord.OpSigS) {
-			return true
-	}
-	return false
+	return reflect.DeepEqual(requestorPublicKey, opRecord.AuthorPubKey) &&
+		ecdsa.Verify(&opRecord.AuthorPubKey, []byte(opRecord.Op), opRecord.OpSigR, opRecord.OpSigS)
 }
 
 // given the shapeHash, return true if it is in the longest chain of the blockchain
