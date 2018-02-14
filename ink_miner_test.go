@@ -9,6 +9,7 @@ import (
 
 	"testing"
 	"reflect"
+	"strings"
 )
 
 const GENESIS_BLOCK_HASH = "83218ac34c1834c26781fe4bde918ee4"
@@ -110,6 +111,7 @@ var blockFourHash = ComputeBlockHash(opBlockMinerTwo)
 
 var blockChainMock blockchain.BlockChain
 
+
 func setUpBlockChain() {
 	opRecordsBlockThree[opRecOneHash] = &minerOneOpRecordOne
 	opRecordsBlockThree[opRecTwoHash] = &minerOneOpRecordTwo
@@ -125,6 +127,10 @@ func setUpBlockChain() {
 		Blocks: blocks,
 		NewestHash: blockFourHash,
 	}
+
+	//init global vars
+	pendingOperations = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
+	blockChain = blockChainMock
 
 	// Traverses the chain and print out content of each block in the chain
 	//newestHash := blockChainMock.NewestHash
@@ -151,11 +157,11 @@ func setUpBlockChain() {
 
 func TestGetInkTraversal(t *testing.T) {
 	setUpBlockChain()
-	if ink := GetInkTraversal(&mockInkMiner, &minerOnePublicKey, blockChainMock); ink != 130 {
+	if ink := GetInkTraversal(&mockInkMiner, &minerOnePublicKey); ink != 130 {
 		t.Errorf("Expected ink for miner 1: 130, but got %d", ink)
 	}
 
-	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey, blockChainMock); ink != 130 {
+	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 130 {
 		t.Errorf("Expected ink for miner 2: 130, but got %d", ink)
 	}
 }
@@ -163,19 +169,46 @@ func TestGetInkTraversal(t *testing.T) {
 func TestGetShapesTraversal(t *testing.T) {
 	setUpBlockChain()
 	shapesDrawnByMinersOtherThanMinerOne := []string{"M 50 50 L 60 60", "M 30 30 L 40 40"}
-	if shapes := GetShapeTraversal(&mockInkMiner, &minerOnePublicKey, blockChainMock); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerOne, shapes) {
+	if shapes := GetShapeTraversal(&mockInkMiner, &minerOnePublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerOne, shapes) {
 		t.Errorf("Expected shapes for miner 1: %v, but got %v", shapesDrawnByMinersOtherThanMinerOne, shapes)
 	}
 
 	shapesDrawnByMinersOtherThanMinerTwo := []string{"M 0 0 L 20 20"}
-	if shapes := GetShapeTraversal(&mockInkMiner, &minerTwoPublicKey, blockChainMock); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerTwo, shapes) {
+	if shapes := GetShapeTraversal(&mockInkMiner, &minerTwoPublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerTwo, shapes) {
 		t.Errorf("Expected shapes for miner 2: %v, but got %v", shapesDrawnByMinersOtherThanMinerTwo, shapes)
 	}
 }
 
-func TestGetShapeTraversal(t *testing.T) {
+func TestGetOpRecordTraversal(t *testing.T) {
 	setUpBlockChain()
-	if opRecs, _ := GetOpRecordTraversal(opRecThreeHash, &mockInkMiner, blockChainMock); !reflect.DeepEqual(opRecs, minerTwoOpRecord) {
-		t.Errorf("Expected opRecords for %s: %+v, but got %+v", opRecThreeHash, opRecs, minerTwoOpRecord)
+	opRec, blockHash, exists := GetOpRecordTraversal(opRecThreeHash, mockInkMiner.settings.GenesisBlockHash)
+	if !reflect.DeepEqual(opRec, minerTwoOpRecord) || !reflect.DeepEqual(blockHash, blockFourHash) ||!exists {
+		t.Errorf("Expected opRecord for %s: %+v, but got %+v; and expected blockHash %s, but got %s", opRecThreeHash, minerTwoOpRecord, opRec, blockFourHash, blockHash)
+	}
+}
+
+func TestIsValidatedByValidateNumOf1(t *testing.T) {
+	setUpBlockChain()
+	blockHash, validated := IsValidatedByValidateNum(opRecOneHash, 1, mockInkMiner.settings.GenesisBlockHash, &minerOnePublicKey)
+	if !strings.EqualFold(blockHash, blockThreeHash) || !validated {
+		t.Errorf("Expected opRecordHash %s with validateNum of %d to be validated: %d, but got %d" +
+			";and to be in block with blockhash: %s, but got %s ", opRecOneHash, true, validated, blockThreeHash, blockHash)
+	}
+}
+
+func TestVerifyOpRecordAuthor(t *testing.T) {
+	setUpBlockChain()
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerTwoOpRecord); !authorVerified {
+		t.Errorf("Expected author with pub key %+v to be verified for opRecord %v", minerTwoPublicKey, minerTwoOpRecord)
+	}
+
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
+		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
+	}
+
+	// if miner two was malicious and changed the author public key to it's own, author verification should fail for the opRecord
+	minerOneOpRecordOne.AuthorPubKey = minerTwoPublicKey
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
+		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
 	}
 }
