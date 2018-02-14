@@ -68,7 +68,6 @@ var (
 
 // Start the miner.
 func main() {
-	fmt.Printf("IS BLOCKCHAIN EMPTY? %+v", blockChain)
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 
