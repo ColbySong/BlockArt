@@ -132,11 +132,16 @@ func TestCheckOutOfBounds(t *testing.T) {
 
 func TestCheckOverLap(t *testing.T) {
 	simpleLine := SVGPathCoordinates{ XCords: []int{100, 150}, YCords: []int{100, 150} }
+	sameSimpleLine := SVGPathCoordinates{ XCords: []int{100, 150}, YCords: []int{100, 150} }
 	intersectsSimpleLine :=  SVGPathCoordinates{ XCords: []int{150, 50}, YCords: []int{120, 120} }
 	noIntersect := SVGPathCoordinates{ XCords: []int{150, 50}, YCords: []int{90, 90} }
 
 	// Two lines that intersect
 	if err := CheckOverlap(simpleLine, intersectsSimpleLine); err == nil {
+		t.Error("The two path over laps but got that they don't")
+	}
+
+	if err := CheckOverlap(simpleLine, sameSimpleLine); err == nil {
 		t.Error("The two path over laps but got that they don't")
 	}
 
