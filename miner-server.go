@@ -1,6 +1,10 @@
 package main
 
-import "./blockchain"
+import (
+	"./util"
+	"./blockchain"
+	"fmt"
+)
 
 // RPC Target
 // Disseminate Block to connected miners, if it passes validation.
@@ -128,7 +132,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	}
 
 	// 3. Check operations for validity
-	if !hasValidOperations(block.OpRecords) {
+	if !hasValidOperations(s.inkMiner, block.OpRecords) {
 		errLog.Printf("Invalid block received: invalid operations\n")
 		return false
 	}
@@ -157,8 +161,61 @@ func switchToLongestBranch() string {
 }
 // Checks if ALL operations as a set can be executed.
 // Must check for ink level and shape overlap.
-func hasValidOperations(ops map[string]*blockchain.OpRecord) bool {
-	// todo - stub
+func hasValidOperations(inkMiner *InkMiner, ops map[string]*blockchain.OpRecord) bool {
+	for _, op := range ops {
+		if !isValidOperation(inkMiner, *op) {
+			return false
+		}
+	}
+	return true
+}
+
+// check if the given operation is valid
+// checks for ink and shape overlap
+func isValidOperation(inkMiner *InkMiner, op blockchain.OpRecord) bool {
+	inkRemaining := GetInkTraversal(inkMiner, &op.AuthorPubKey)
+	if inkRemaining <= 0 {
+		return false
+	}
+	svgPathString, transparency:= parsePath(op.Op)
+	requestedSVGPath, _ := util.ConvertPathToPoints(svgPathString)
+	isTransparent := false
+	isClosed := false
+
+	if transparency == "transparent" {
+		isTransparent = true
+	}
+
+	lastSVGChar := string(svgPathString[len(svgPathString)-1])
+
+	if lastSVGChar == "Z" || lastSVGChar == "z" {
+		isClosed = true
+	}
+
+	// check if shape is in bound
+	canvasSettings := inkMiner.settings.CanvasSettings
+	if util.CheckOutOfBounds(requestedSVGPath, canvasSettings.CanvasXMax, canvasSettings.CanvasYMax) != nil {
+		fmt.Println("shape out of bounds")
+		return false
+	}
+
+	// check if shape overlaps with shapes from OTHER application
+	currentSVGStringsOnCanvas := GetShapeTraversal(inkMiner, &op.AuthorPubKey)
+	for _, svgPathString := range currentSVGStringsOnCanvas {
+		svgPath, _ := util.ConvertPathToPoints(svgPathString)
+		if util.CheckOverlap(svgPath, requestedSVGPath) != nil {
+			fmt.Println("shape overlaps")
+			return false
+		}
+	}
+
+	// if shape is inbound and does not overlap, then calculate the ink required
+	inkRequired := util.CalculateInkRequired(requestedSVGPath, isTransparent, isClosed)
+	if inkRequired > uint32(inkRemaining) {
+		fmt.Println("not enough ink")
+		return false
+        }
+
 	return true
 }
 

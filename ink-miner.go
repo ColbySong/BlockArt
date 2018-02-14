@@ -396,7 +396,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 
 	// if shape is inbound and does not overlap, then calculate the ink required
 	inkRequired := util.CalculateInkRequired(requestedSVGPath, isTransparent, isClosed)
-	if inkRequired < uint32(inkRemaining) {
+	if inkRequired > uint32(inkRemaining) {
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 
@@ -571,6 +571,7 @@ func GetInkTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey) int {
 			}
 			for _, opRecord := range block.OpRecords {
 				if reflect.DeepEqual(opRecord.AuthorPubKey, *pubKey) {
+					// fmt.Println("found op record with author:", opRecord.AuthorPubKey)
 					if isOpDelete(opRecord.Op) {
 						inkRemaining += int(opRecord.InkUsed)
 					} else { // Add block
@@ -604,7 +605,7 @@ func getShapesFromOpRecords(opRecords map[string]*blockchain.OpRecord, pubKey *e
 	var shapesToDelete []string
 	for _, opRecord := range opRecords {
 		if !reflect.DeepEqual(opRecord.AuthorPubKey, *pubKey) {
-			svgPath := parsePath(opRecord.Op)
+			svgPath, _ := parsePath(opRecord.Op)
 			if isOpDelete(opRecord.Op) {
 				shapesToDelete = append(shapesToDelete, svgPath)
 			} else {
@@ -667,10 +668,13 @@ func removeShapesDeleted(allShapes []string, shapesToDelete []string) []string {
 	return allShapes
 }
 
-func parsePath(shapeSVGString string) string {
+// returns the d and fill attributes from a full svg path
+func parsePath(shapeSVGString string) (string, string) {
 	buf := strings.Split(shapeSVGString, "d=\"")
 	bufTwo := strings.Split(buf[1], "\" s")
-	return bufTwo[0]
+	bufThree := strings.Split(bufTwo[1], "fill=\"")
+	bufFour := strings.Split(bufThree[1], "\"")
+	return bufTwo[0], bufFour[0]
 }
 
 func isOpDelete(shapeSvgString string) bool {
