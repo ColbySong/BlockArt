@@ -153,9 +153,8 @@ func (m InkMiner) maintainMinerConnections() {
 
 
 // Broadcast the new operation
-func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord) error {
+func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord, opRecordHash string) error {
 	pendingOperations.Lock()
-	opRecordHash := ComputeOpRecordHash(op)
 	if _, exists := pendingOperations.all[opRecordHash]; !exists {
 		// Add operation to pending transaction
 		// TODO : get ink for op
@@ -423,20 +422,25 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 
 	opRecordHash := ComputeOpRecordHash(opRecord)
 
-	a.inkMiner.broadcastNewOperation(opRecord)
+	a.inkMiner.broadcastNewOperation(opRecord, opRecordHash)
 
-	// TODO: ping to see if validated according to validateNum
-	blockHash := blockChain.NewestHash
-
-	newShapeResp.ShapeHash = opRecordHash
-	newShapeResp.BlockHash = blockHash
-	newShapeResp.InkRemaining = 0 // call get ink?
-	return nil
+	// wait until return from validateNum validation
+	if blockHash, validated := validateByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated{
+		newShapeResp.ShapeHash = opRecordHash
+		newShapeResp.BlockHash = blockHash
+		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
+		if inkRemaining < 0 {
+			fmt.Sprintf("AddShape: Shouldn't have negative ink after successful implementation of block")
+		}
+		newShapeResp.InkRemaining = uint32(inkRemaining)
+		return nil
+	}
+	return errors.New("AddShape was unsuccessful")
 }
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
 	outLog.Printf("Reached GetSvgString\n")
-	if opRecord, exists := GetOpRecordTraversal(shapeHash, a.inkMiner, blockChain); exists {
+	if opRecord, _, exists := GetOpRecordTraversal(shapeHash, a.inkMiner.settings.GenesisBlockHash, blockChain); exists {
 		*svgString = opRecord.Op
 		return nil
 	}
@@ -464,8 +468,8 @@ func concatStrings(strArray []string) string {
 func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRemaining *uint32) error {
 	outLog.Printf("Reached DeleteShape\n")
 
-	if opRecord, exists := GetOpRecordTraversal(deleteShapeReq.ShapeHash, a.inkMiner, blockChain); exists {
-		if reflect.DeepEqual(opRecord.AuthorPubKey, *a.inkMiner.pubKey) {
+	if opRecord, _, exists := GetOpRecordTraversal(deleteShapeReq.ShapeHash, a.inkMiner.settings.GenesisBlockHash, blockChain); exists {
+		if VerifyOpRecordAuthor(*a.inkMiner.pubKey, opRecord){
 			newOp := concatStrings([]string{"delete ", opRecord.Op})
 
 			// sign the shape
@@ -481,34 +485,82 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 				OpSigR: r,
 				AuthorPubKey: *a.inkMiner.pubKey,
 			}
-			a.inkMiner.broadcastNewOperation(newOpRecord)
+			opRecordHash := ComputeOpRecordHash(newOpRecord)
+			a.inkMiner.broadcastNewOperation(newOpRecord, opRecordHash)
 
-			// TODO: ping to see if validated according to validateNum
+			// wait until return from validateNum validation
+			if _, validated := validateByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); !validated {
+				newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
 
-			ink := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey, blockChain)
-
-			if ink < 0 {
-				fmt.Printf("Delete Shape: got back negative ink")
+				if newInkRemaining < 0 {
+					fmt.Printf("DeleteShape: Shouldn't have negative ink after successful implementation of block")
+					return nil
+				}
+				*inkRemaining = uint32(newInkRemaining)
+				return nil
 			}
-			*inkRemaining = uint32(ink)
-			return nil
+			return errors.New("Delete Shape was unsuccessful")
 		}
 	}
 	return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOWNER])
 
 }
 
-func GetOpRecordTraversal(shapeHash string, inkMiner *InkMiner, blockChain blockchain.BlockChain) (blockchain.OpRecord, bool) {
+func validateByValidateNum(opRecordHash string, validateNum uint8, genesisBlockHash string, pubKey *ecdsa.PublicKey) (string, bool) {
+	// take off pending list and in waiting validation list => op in block
+	// check for opRecordHash using getOpRecord
+	// case 0: if found then it was added to blockchain
+	// so get blockNum, then check again if still there when
+	// blockNum+blockNumToValidate is passed/reached (depending how often you're checking)
+	// if not there anymore, then it was not validated and
+	// longest chain updated
+	// case 1: if not found then it was denied so return false
+	//TODO: need to lock when periodically checking blockchain?
+
+	for {
+		if _, exists := pendingOperations.all[opRecordHash]; !exists {
+			for {
+				if opRecord, blockHash, exists := GetOpRecordTraversal(opRecordHash, genesisBlockHash, blockChain); exists {
+					blockNumOfOp := blockChain.Blocks[blockHash].BlockNum
+					newestBlockNum  := blockChain.Blocks[blockChain.NewestHash].BlockNum
+					if newestBlockNum - blockNumOfOp == uint32(validateNum) {
+						if VerifyOpRecordAuthor(*pubKey, opRecord) {
+							return blockHash, true
+						}
+					}
+				} else {
+					return "", false
+				}
+				time.Sleep(30 * time.Second)
+			}
+		}
+		time.Sleep(30 * time.Second)
+	}
+	return "", false
+}
+
+
+func VerifyOpRecordAuthor (requestorPublicKey ecdsa.PublicKey , opRecord blockchain.OpRecord) bool {
+	if reflect.DeepEqual(requestorPublicKey, opRecord.AuthorPubKey) &&
+		ecdsa.Verify(&opRecord.AuthorPubKey, []byte(opRecord.Op), opRecord.OpSigR, opRecord.OpSigS) {
+			return true
+	}
+	return false
+}
+
+// given the shapeHash, return true if it is in the longest chain of the blockchain
+// if true, also return the opRecord and the corresponding blockHash of the block that the shapeHash is contained in
+func GetOpRecordTraversal(shapeHash string, genesisBlockHash string, blockChain blockchain.BlockChain) (blockchain.OpRecord, string, bool) {
 	newestHash := blockChain.NewestHash
-	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash ; blockHash = blockChain.Blocks[blockHash].PrevHash {
+	for blockHash := newestHash; blockHash != genesisBlockHash ; blockHash = blockChain.Blocks[blockHash].PrevHash {
 		block := blockChain.Blocks[blockHash]
 		if len(block.OpRecords) > 0 {
 			if opRecord, exists := block.OpRecords[shapeHash]; exists {
-				return *opRecord, true
+				return *opRecord, blockHash, true
 			}
 		}
 	}
-	return blockchain.OpRecord{}, false
+	return blockchain.OpRecord{}, "", false
 }
 
 // returns the amount of ink owned by @param pubKey
