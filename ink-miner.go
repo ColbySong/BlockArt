@@ -1046,3 +1046,25 @@ func computeBlockChainHash(blockChain blockchain.BlockChain) string {
 	hash.Write(bytes)
 	return hex.EncodeToString(hash.Sum(nil))
 }
+
+// *FOR TESTING PURPOSES ONLY*
+// PRINT ENTIRE BLOCK CHAIN, HARD-CODED GENESIS BLOCK HASH FROM CONFIG.JSON
+func PrintBlockChain() {
+	fmt.Println("-----PRINTING BLOCK CHAIN-----")
+	GenesisBlockHash := "83218ac34c1834c26781fe4bde918ee4"
+	for blockHash := blockChain.NewestHash; blockHash != GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
+		block := blockChain.Blocks[blockHash]
+		fmt.Printf("Block Num: %d \nPrevHash: %s \nMinerPubKey: %+v\n", block.BlockNum, block.PrevHash, block.MinerPubKey.X)
+		if len(block.OpRecords) == 0 {
+			fmt.Printf("Block %d is a no op block\n\n", block.BlockNum)
+		} else {
+			fmt.Printf("Block %d contain the the following operations: \n", block.BlockNum)
+			for k := range block.OpRecords {
+				fmt.Println(block.OpRecords[k].Op)
+				fmt.Println("The above Operation was done by: ", block.OpRecords[k].AuthorPubKey)
+			}
+			fmt.Println("")
+		}
+	}
+	fmt.Println("-----FINISHED PRINTING-----")
+}
