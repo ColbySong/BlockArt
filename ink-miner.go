@@ -289,13 +289,21 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 			nextBlockNum = blockChain.Blocks[blockChain.NewestHash].BlockNum + 1
 		}
 
+		// make copy of pending OpRecords to add to newly generated block
+		// instead of using pendingOperations because pendingOperations will be modified later
+		var incorporatedOps = make(map[string]*blockchain.OpRecord)
+		for k, v := range pendingOperations.all {
+			incorporatedOps[k] = v
+		}
+
 		block := &blockchain.Block{
 			BlockNum:    nextBlockNum,
 			PrevHash:    blockChain.NewestHash,
-			OpRecords:   pendingOperations.all,
+			OpRecords:   incorporatedOps,
 			MinerPubKey: m.pubKey,
 			Nonce:       nonce,
 		}
+
 		hash := ComputeBlockHash(*block)
 
 		if verifyTrailingZeros(hash, numZeros) {
