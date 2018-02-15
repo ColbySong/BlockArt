@@ -333,7 +333,6 @@ func removeOperationsFromPendingOperations(opRecords map[string]*blockchain.OpRe
 	pendingOperations.Unlock()
 }
 
-
 func sendBlockToAllConnectedMiners(block blockchain.Block) {
 	connectedMiners.RLock()
 	for _, minerAddr := range connectedMiners.all {
@@ -445,7 +444,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 		}
 	}
 
-	if pendingInkUsed + int(inkRequired) > inkRemaining {
+	if pendingInkUsed+int(inkRequired) > inkRemaining {
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 
@@ -691,12 +690,13 @@ func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 	defer blockChain.RUnlock()
 
 	if block, ok := blockChain.Blocks[blockHash]; ok {
-		shapeHashes := make([]string, len(block.OpRecords))
+		tempShapeHashes := make([]string, len(block.OpRecords))
 		var i = 0
 		for _, v := range block.OpRecords {
-			shapeHashes[i] = v.Op
+			tempShapeHashes[i] = v.Op
 			i++
 		}
+		*shapeHashes = tempShapeHashes
 		return nil
 	}
 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
@@ -763,7 +763,6 @@ func miscErr(msg string) error {
 	buf.WriteString(msg)
 	return errors.New(buf.String())
 }
-
 
 // RPC Target
 // Disseminate Block to connected miners, if it passes validation.
@@ -935,7 +934,7 @@ func isValidOperation(inkMiner *InkMiner, op blockchain.OpRecord) bool {
 	if inkRemaining <= 0 {
 		return false
 	}
-	svgPathString, transparency:= parsePath(op.Op)
+	svgPathString, transparency := parsePath(op.Op)
 	requestedSVGPath, _ := util.ConvertPathToPoints(svgPathString)
 	isTransparent := false
 	isClosed := false
