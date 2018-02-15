@@ -168,7 +168,7 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord, opRecordHash str
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
-		sendToAllConnectedMiners("MServer.DisseminateOperation", op, nil)
+		sendOpToAllConnectedMiners(op)
 		return nil
 	}
 	pendingOperations.Unlock()
@@ -321,7 +321,7 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 func broadcastNewBlock(block blockchain.Block) error {
 	removeOperationsFromPendingOperations(block.OpRecords)
 
-	sendToAllConnectedMiners("MServer.DisseminateBlock", block, nil)
+	sendBlockToAllConnectedMiners(block)
 	return nil
 }
 
@@ -333,14 +333,25 @@ func removeOperationsFromPendingOperations(opRecords map[string]*blockchain.OpRe
 	pendingOperations.Unlock()
 }
 
-// Generic method to send RPC to all peers
-func sendToAllConnectedMiners(remoteProcedure string, request interface{}, resp interface{}) {
+
+func sendBlockToAllConnectedMiners(block blockchain.Block) {
 	connectedMiners.RLock()
 	for _, minerAddr := range connectedMiners.all {
 		miner, err := rpc.Dial("tcp", minerAddr.String())
 		handleError("Could not dial miner: "+minerAddr.String(), err)
-		err = miner.Call(remoteProcedure, request, &resp)
-		handleError("Could not call RPC method: "+remoteProcedure, err)
+		err = miner.Call("MServer.DisseminateBlock", block, nil)
+		handleError("Could not call RPC method: MServer.DisseminateBlock", err)
+	}
+	connectedMiners.RUnlock()
+
+}
+func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
+	connectedMiners.RLock()
+	for _, minerAddr := range connectedMiners.all {
+		miner, err := rpc.Dial("tcp", minerAddr.String())
+		handleError("Could not dial miner: "+minerAddr.String(), err)
+		err = miner.Call("MServer.DisseminateOperation", op, nil)
+		handleError("Could not call RPC method: MServer.DisseminateOperation", err)
 	}
 	connectedMiners.RUnlock()
 }
@@ -787,7 +798,7 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 
 	if s.isValidBlock(block) {
 		saveBlockToBlockChain(block)
-		sendToAllConnectedMiners("MServer.DisseminateBlock", block, nil)
+		sendBlockToAllConnectedMiners(block)
 		switchToLongestBranch()
 	} else {
 		errLog.Printf("Rejecting invalid block.\n")
@@ -813,7 +824,7 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 		pendingOperations.Unlock()
 
 		// Send operation to all connected miners
-		sendToAllConnectedMiners("MServer.DisseminateOperation", op, nil)
+		sendOpToAllConnectedMiners(op)
 		return nil
 	}
 	pendingOperations.Unlock()
