@@ -9,6 +9,8 @@ import (
 	"./blockchain"
 
 	"testing"
+	"reflect"
+	"strings"
 )
 
 const GENESIS_BLOCK_HASH = "83218ac34c1834c26781fe4bde918ee4"
@@ -19,7 +21,7 @@ const SVG_OP_THREE = "<path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transpar
 const SVG_INVALID_OP_ONE = "<path d=\"M 30 30 L 30 800\" stroke=\"red\" fill=\"transparent\"/>"
 const SVG_VALID_OP_ONE = "<path d=\"M 300 300 L 310 310\" stroke=\"red\" fill=\"transparent\"/>"
 
-var p256 = elliptic.P256()
+var p256 = elliptic.P256()g
 var minerOnePrivateKey, _ = ecdsa.GenerateKey(p256, rand.Reader)
 var minerOnePublicKey = minerOnePrivateKey.PublicKey
 var minerTwoPrivateKey, _ = ecdsa.GenerateKey(p256, rand.Reader)
@@ -167,63 +169,63 @@ func setUpBlockChain() {
 
 }
 
-//func TestGetInkTraversal(t *testing.T) {
-//	setUpBlockChain()
-//	if ink := GetInkTraversal(&mockInkMiner, &minerOnePublicKey); ink != 130 {
-//		t.Errorf("Expected ink for miner 1: 130, but got %d", ink)
-//	}
-//
-//	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 130 {
-//		t.Errorf("Expected ink for miner 2: 130, but got %d", ink)
-//	}
-//}
+func TestGetInkTraversal(t *testing.T) {
+	setUpBlockChain()
+	if ink := GetInkTraversal(&mockInkMiner, &minerOnePublicKey); ink != 130 {
+		t.Errorf("Expected ink for miner 1: 130, but got %d", ink)
+	}
 
-//func TestGetShapesTraversal(t *testing.T) {
-//	setUpBlockChain()
-//	shapesDrawnByMinersOtherThanMinerOne := []string{"M 50 50 L 60 60", "M 30 30 L 40 40"}
-//	if shapes := GetShapeTraversal(&mockInkMiner, &minerOnePublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerOne, shapes) {
-//		t.Errorf("Expected shapes for miner 1: %v, but got %v", shapesDrawnByMinersOtherThanMinerOne, shapes)
-//	}
-//
-//	shapesDrawnByMinersOtherThanMinerTwo := []string{"M 0 0 L 20 20"}
-//	if shapes := GetShapeTraversal(&mockInkMiner, &minerTwoPublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerTwo, shapes) {
-//		t.Errorf("Expected shapes for miner 2: %v, but got %v", shapesDrawnByMinersOtherThanMinerTwo, shapes)
-//	}
-//}
+	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 130 {
+		t.Errorf("Expected ink for miner 2: 130, but got %d", ink)
+	}
+}
 
-//func TestGetOpRecordTraversal(t *testing.T) {
-//	setUpBlockChain()
-//	opRec, blockHash, exists := GetOpRecordTraversal(opRecThreeHash, mockInkMiner.settings.GenesisBlockHash)
-//	if !reflect.DeepEqual(opRec, minerTwoOpRecord) || !reflect.DeepEqual(blockHash, blockFourHash) || !exists {
-//		t.Errorf("Expected opRecord for %s: %+v, but got %+v; and expected blockHash %s, but got %s", opRecThreeHash, minerTwoOpRecord, opRec, blockFourHash, blockHash)
-//	}
-//}
+func TestGetShapesTraversal(t *testing.T) {
+	setUpBlockChain()
+	shapesDrawnByMinersOtherThanMinerOne := []string{"M 50 50 L 60 60", "M 30 30 L 40 40"}
+	if shapes := GetShapeTraversal(&mockInkMiner, &minerOnePublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerOne, shapes) {
+		t.Errorf("Expected shapes for miner 1: %v, but got %v", shapesDrawnByMinersOtherThanMinerOne, shapes)
+	}
 
-//func TestIsValidatedByValidateNumOf1(t *testing.T) {
-//	setUpBlockChain()
-//	blockHash, validated := IsValidatedByValidateNum(opRecOneHash, 1, mockInkMiner.settings.GenesisBlockHash, &minerOnePublicKey)
-//	if !strings.EqualFold(blockHash, blockThreeHash) || !validated {
-//		t.Errorf("Expected opRecordHash %s with validateNum of %d to be validated: %d, but got %d"+
-//			";and to be in block with blockhash: %s, but got %s ", opRecOneHash, true, validated, blockThreeHash, blockHash)
-//	}
-//}
-//
-//func TestVerifyOpRecordAuthor(t *testing.T) {
-//	setUpBlockChain()
-//	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerTwoOpRecord); !authorVerified {
-//		t.Errorf("Expected author with pub key %+v to be verified for opRecord %v", minerTwoPublicKey, minerTwoOpRecord)
-//	}
-//
-//	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
-//		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
-//	}
-//
-//	// if miner two was malicious and changed the author public key to it's own, author verification should fail for the opRecord
-//	minerOneOpRecordOne.AuthorPubKey = minerTwoPublicKey
-//	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
-//		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
-//	}
-//}
+	shapesDrawnByMinersOtherThanMinerTwo := []string{"M 0 0 L 20 20"}
+	if shapes := GetShapeTraversal(&mockInkMiner, &minerTwoPublicKey); !reflect.DeepEqual(shapesDrawnByMinersOtherThanMinerTwo, shapes) {
+		t.Errorf("Expected shapes for miner 2: %v, but got %v", shapesDrawnByMinersOtherThanMinerTwo, shapes)
+	}
+}
+
+func TestGetOpRecordTraversal(t *testing.T) {
+	setUpBlockChain()
+	opRec, blockHash, exists := GetOpRecordTraversal(opRecThreeHash, mockInkMiner.settings.GenesisBlockHash)
+	if !reflect.DeepEqual(opRec, minerTwoOpRecord) || !reflect.DeepEqual(blockHash, blockFourHash) || !exists {
+		t.Errorf("Expected opRecord for %s: %+v, but got %+v; and expected blockHash %s, but got %s", opRecThreeHash, minerTwoOpRecord, opRec, blockFourHash, blockHash)
+	}
+}
+
+func TestIsValidatedByValidateNumOf1(t *testing.T) {
+	setUpBlockChain()
+	blockHash, validated := IsValidatedByValidateNum(opRecOneHash, 1, mockInkMiner.settings.GenesisBlockHash, &minerOnePublicKey)
+	if !strings.EqualFold(blockHash, blockThreeHash) || !validated {
+		t.Errorf("Expected opRecordHash %s with validateNum of %d to be validated: %d, but got %d"+
+			";and to be in block with blockhash: %s, but got %s ", opRecOneHash, true, validated, blockThreeHash, blockHash)
+	}
+}
+
+func TestVerifyOpRecordAuthor(t *testing.T) {
+	setUpBlockChain()
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerTwoOpRecord); !authorVerified {
+		t.Errorf("Expected author with pub key %+v to be verified for opRecord %v", minerTwoPublicKey, minerTwoOpRecord)
+	}
+
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
+		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
+	}
+
+	// if miner two was malicious and changed the author public key to it's own, author verification should fail for the opRecord
+	minerOneOpRecordOne.AuthorPubKey = minerTwoPublicKey
+	if authorVerified := VerifyOpRecordAuthor(minerTwoPublicKey, minerOneOpRecordOne); authorVerified {
+		t.Errorf("Expected author with pub key %+v to be not verified for opRecord %v", minerTwoPublicKey, minerOneOpRecordOne)
+	}
+}
 
 func TestIsValidOperation(t *testing.T) {
 	setUpBlockChain()
@@ -251,52 +253,52 @@ func TestIsValidOperation(t *testing.T) {
 	}
 }
 
-//func TestGetAllOperationsFromBlockChain(t *testing.T) {
-//	setUpBlockChain()
-//	if opRecs := GetAllOperationsFromBlockChain(blockChainMock, GENESIS_BLOCK_HASH); !reflect.DeepEqual(opRecs, allOpRecords) {
-//		t.Errorf("Expected all opRecords to match")
-//	}
-//}
+func TestGetAllOperationsFromBlockChain(t *testing.T) {
+	setUpBlockChain()
+	if opRecs := GetAllOperationsFromBlockChain(blockChainMock, GENESIS_BLOCK_HASH); !reflect.DeepEqual(opRecs, allOpRecords) {
+		t.Errorf("Expected all opRecords to match")
+	}
+}
 
-//
-//func TestDeletedRefundsInk(t *testing.T) {
-//	setUpBlockChain()
-//
-//	// Set up delete operation for minerTwo's opBlockMinerTwo
-//
-//	// svg string
-//	const SVG_DELETE_OP_THREE = "<delete path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
-//	var svgOpThreeDelete = []byte(SVG_DELETE_OP_THREE)
-//
-//	// opSigR, opSigS
-//	var r4, s4, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpThreeDelete)
-//
-//	// op
-//	var minerTwoOpRecordDelete = blockchain.OpRecord{
-//		Op:           SVG_DELETE_OP_THREE,
-//		InkUsed:      10,
-//		OpSigR:       r4,
-//		OpSigS:       s4,
-//		AuthorPubKey: minerTwoPublicKey,
-//	}
-//	var opRecFourHash = ComputeOpRecordHash(minerTwoOpRecordDelete)
-//
-//	// block
-//	var opRecordsBlockFive = make(map[string]*blockchain.OpRecord)
-//	var opDeleteBlockMinerTwo = blockchain.Block{
-//		BlockNum:    5,
-//		PrevHash:    blockFourHash,
-//		OpRecords:   opRecordsBlockFive,
-//		MinerPubKey: &minerTwoPublicKey,
-//		Nonce:       RANDOM_NONCE,
-//	}
-//	var blockFiveHash = ComputeBlockHash(opDeleteBlockMinerTwo)
-//
-//	opRecordsBlockFive[opRecFourHash] = &minerTwoOpRecordDelete // delete op on miner2
-//	blockChain.Blocks[blockFiveHash] = &opDeleteBlockMinerTwo // block with delete op for miner2
-//	blockChain.NewestHash = blockFiveHash // delete block is newest block
-//
-//	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 240 { // 50 + 100(opblock_2op) - 10(op) - 10(op) + 100(opblock_1op) + 10(inkrefund)
-//		t.Errorf("Expected ink for miner 2: 240, but got %d", ink)
-//	}
-//}
+
+func TestDeletedRefundsInk(t *testing.T) {
+	setUpBlockChain()
+
+	// Set up delete operation for minerTwo's opBlockMinerTwo
+
+	// svg string
+	const SVG_DELETE_OP_THREE = "<delete path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
+	var svgOpThreeDelete = []byte(SVG_DELETE_OP_THREE)
+
+	// opSigR, opSigS
+	var r4, s4, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpThreeDelete)
+
+	// op
+	var minerTwoOpRecordDelete = blockchain.OpRecord{
+		Op:           SVG_DELETE_OP_THREE,
+		InkUsed:      10,
+		OpSigR:       r4,
+		OpSigS:       s4,
+		AuthorPubKey: minerTwoPublicKey,
+	}
+	var opRecFourHash = ComputeOpRecordHash(minerTwoOpRecordDelete)
+
+	// block
+	var opRecordsBlockFive = make(map[string]*blockchain.OpRecord)
+	var opDeleteBlockMinerTwo = blockchain.Block{
+		BlockNum:    5,
+		PrevHash:    blockFourHash,
+		OpRecords:   opRecordsBlockFive,
+		MinerPubKey: &minerTwoPublicKey,
+		Nonce:       RANDOM_NONCE,
+	}
+	var blockFiveHash = ComputeBlockHash(opDeleteBlockMinerTwo)
+
+	opRecordsBlockFive[opRecFourHash] = &minerTwoOpRecordDelete // delete op on miner2
+	blockChain.Blocks[blockFiveHash] = &opDeleteBlockMinerTwo // block with delete op for miner2
+	blockChain.NewestHash = blockFiveHash // delete block is newest block
+
+	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 240 { // 50 + 100(opblock_2op) - 10(op) - 10(op) + 100(opblock_1op) + 10(inkrefund)
+		t.Errorf("Expected ink for miner 2: 240, but got %d", ink)
+	}
+}
