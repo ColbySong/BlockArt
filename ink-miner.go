@@ -700,7 +700,9 @@ func (a *MArtNode) GetGenesisBlock(ignoredreq bool, blockHash *string) error {
 func (a *MArtNode) GetChildren(blockHash string, blockHashes *[]string) error {
 	outLog.Printf("Reached GetChildren\n")
 	*blockHashes = make([]string, 0)
-	if _, exists := blockChain.Blocks[blockHash]; !exists{
+	genesisBlockHash := a.inkMiner.settings.GenesisBlockHash
+	_, exists := blockChain.Blocks[blockHash]
+	if !strings.EqualFold(genesisBlockHash, blockHash) && !exists {
 		return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
 	}
 	for hash, block := range blockChain.Blocks {
