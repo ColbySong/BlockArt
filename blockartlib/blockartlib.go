@@ -321,8 +321,8 @@ func (c CanvasStruct) GetSvgString(shapeHash string) (svgString string, err erro
 			return "", InvalidShapeHashError(shapeHash)
 		}
 	}
-	//TODO: miner side: implement map[shapeHash]Shape where Shape has shapeType, svgstring, fill, stroke
-	return "", InvalidShapeHashError(shapeHash)
+	
+	return svgString, InvalidShapeHashError(shapeHash)
 }
 
 func (c CanvasStruct) GetInk() (inkRemaining uint32, err error) {
