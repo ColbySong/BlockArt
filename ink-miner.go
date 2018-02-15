@@ -670,13 +670,15 @@ func (a *MArtNode) GetGenesisBlock(ignoredreq bool, blockHash *string) error {
 func (a *MArtNode) GetChildren(blockHash string, blockHashes *[]string) error {
 	outLog.Printf("Reached GetChildren\n")
 	*blockHashes = make([]string, 0)
-	// TODO: traverse blockchain to find corresponding block and return it's children
+	if _, exists := blockChain.Blocks[blockHash]; !exists{
+		return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
+	}
 	for hash, block := range blockChain.Blocks {
 		if strings.EqualFold(block.PrevHash, blockHash) {
 			*blockHashes = append(*blockHashes, hash)
 		}
 	}
- 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
+
 }
 
 func handleError(msg string, e error) {
