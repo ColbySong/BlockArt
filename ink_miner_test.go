@@ -8,9 +8,9 @@ import (
 	"./blockartlib"
 	"./blockchain"
 
+	"testing"
 	"reflect"
 	"strings"
-	"testing"
 )
 
 const GENESIS_BLOCK_HASH = "83218ac34c1834c26781fe4bde918ee4"
@@ -30,7 +30,7 @@ var mockInkMiner = InkMiner{
 	settings: &minerNetSettings,
 }
 var minerNetSettings = blockartlib.MinerNetSettings{
-	CanvasSettings: blockartlib.CanvasSettings{ CanvasYMax: 1000, CanvasXMax: 1000 },
+	CanvasSettings:   blockartlib.CanvasSettings{CanvasYMax: 1000, CanvasXMax: 1000},
 	GenesisBlockHash: GENESIS_BLOCK_HASH,
 	InkPerNoOpBlock:  50,
 	InkPerOpBlock:    100,
@@ -66,6 +66,7 @@ var r2, s2, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpTwo)
 var svgOpThree = []byte(SVG_OP_THREE)
 var r3, s3, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpThree)
 
+// Generate OpRecords
 var minerOneOpRecordOne = blockchain.OpRecord{
 	Op:           SVG_OP_ONE,
 	InkUsed:      20,
@@ -93,6 +94,7 @@ var minerTwoOpRecord = blockchain.OpRecord{
 }
 var opRecThreeHash = ComputeOpRecordHash(minerTwoOpRecord)
 
+// Generate Blocks
 var opRecordsBlockThree = make(map[string]*blockchain.OpRecord)
 var opBlockMinerOne = blockchain.Block{
 	BlockNum:    3,
@@ -128,6 +130,7 @@ func setUpBlockChain() {
 	blocks[blockThreeHash] = &opBlockMinerOne
 	blocks[blockFourHash] = &opBlockMinerTwo
 
+
 	blockChainMock = blockchain.BlockChain{
 		Blocks:     blocks,
 		NewestHash: blockFourHash,
@@ -141,6 +144,7 @@ func setUpBlockChain() {
 	allOpRecords[opRecOneHash] = &minerOneOpRecordOne
 	allOpRecords[opRecTwoHash] = &minerOneOpRecordTwo
 	allOpRecords[opRecThreeHash] = &minerTwoOpRecord
+
 
 	// Traverses the chain and print out content of each block in the chain
 	//newestHash := blockChainMock.NewestHash
@@ -253,5 +257,48 @@ func TestGetAllOperationsFromBlockChain(t *testing.T) {
 	setUpBlockChain()
 	if opRecs := GetAllOperationsFromBlockChain(blockChainMock, GENESIS_BLOCK_HASH); !reflect.DeepEqual(opRecs, allOpRecords) {
 		t.Errorf("Expected all opRecords to match")
+	}
+}
+
+
+func TestDeletedRefundsInk(t *testing.T) {
+	setUpBlockChain()
+
+	// Set up delete operation for minerTwo's opBlockMinerTwo
+
+	// svg string
+	const SVG_DELETE_OP_THREE = "<delete path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
+	var svgOpThreeDelete = []byte(SVG_DELETE_OP_THREE)
+
+	// opSigR, opSigS
+	var r4, s4, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpThreeDelete)
+
+	// op
+	var minerTwoOpRecordDelete = blockchain.OpRecord{
+		Op:           SVG_DELETE_OP_THREE,
+		InkUsed:      10,
+		OpSigR:       r4,
+		OpSigS:       s4,
+		AuthorPubKey: minerTwoPublicKey,
+	}
+	var opRecFourHash = ComputeOpRecordHash(minerTwoOpRecordDelete)
+
+	// block
+	var opRecordsBlockFive = make(map[string]*blockchain.OpRecord)
+	var opDeleteBlockMinerTwo = blockchain.Block{
+		BlockNum:    5,
+		PrevHash:    blockFourHash,
+		OpRecords:   opRecordsBlockFive,
+		MinerPubKey: &minerTwoPublicKey,
+		Nonce:       RANDOM_NONCE,
+	}
+	var blockFiveHash = ComputeBlockHash(opDeleteBlockMinerTwo)
+
+	opRecordsBlockFive[opRecFourHash] = &minerTwoOpRecordDelete // delete op on miner2
+	blockChain.Blocks[blockFiveHash] = &opDeleteBlockMinerTwo // block with delete op for miner2
+	blockChain.NewestHash = blockFiveHash // delete block is newest block
+
+	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 240 { // 50 + 100(opblock_2op) - 10(op) - 10(op) + 100(opblock_1op) + 10(inkrefund)
+		t.Errorf("Expected ink for miner 2: 240, but got %d", ink)
 	}
 }
