@@ -20,6 +20,7 @@ const SVG_OP_TWO = "<path d=\"M 30 30 L 40 40\" stroke=\"red\" fill=\"transparen
 const SVG_OP_THREE = "<path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
 const SVG_INVALID_OP_ONE = "<path d=\"M 30 30 L 30 800\" stroke=\"red\" fill=\"transparent\"/>"
 const SVG_VALID_OP_ONE = "<path d=\"M 300 300 L 310 310\" stroke=\"red\" fill=\"transparent\"/>"
+const SVG_DELETE_OP_THREE = "<delete path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
 
 var p256 = elliptic.P256()
 var minerOnePrivateKey, _ = ecdsa.GenerateKey(p256, rand.Reader)
@@ -65,7 +66,11 @@ var svgOpTwo = []byte(SVG_OP_TWO)
 var r2, s2, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpTwo)
 var svgOpThree = []byte(SVG_OP_THREE)
 var r3, s3, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpThree)
+//var svgOpThreeDelete = []byte(SVG_DELETE_OP_THREE)
+//var r4, s4, _ = ecdsa.Sign(rand.Reader, minerTwoPrivateKey, svgOpThreeDelete)
 
+
+// Generate OpRecords
 var minerOneOpRecordOne = blockchain.OpRecord{
 	Op:           SVG_OP_ONE,
 	InkUsed:      20,
@@ -93,6 +98,16 @@ var minerTwoOpRecord = blockchain.OpRecord{
 }
 var opRecThreeHash = ComputeOpRecordHash(minerTwoOpRecord)
 
+//var minerTwoOpRecordDelete = blockchain.OpRecord{
+//	Op: SVG_DELETE_OP_THREE,
+//	InkUsed: 10,
+//	OpSigR: r4,
+//	OpSigS: s4,
+//	AuthorPubKey: minerTwoPublicKey,
+//}
+//var opRecFourHash = ComputeOpRecordHash(minerTwoOpRecordDelete)
+
+// Generate Blocks
 var opRecordsBlockThree = make(map[string]*blockchain.OpRecord)
 var opBlockMinerOne = blockchain.Block{
 	BlockNum:    3,
@@ -113,6 +128,18 @@ var opBlockMinerTwo = blockchain.Block{
 }
 var blockFourHash = ComputeBlockHash(opBlockMinerTwo)
 
+//delete block on miner two
+//var opRecordsBlockFive = make(map[string]*blockchain.OpRecord)
+//var opDeleteBlockMinerTwo = blockchain.Block{
+//	BlockNum: 5,
+//	PrevHash: blockFourHash,
+//	OpRecords: opRecordsBlockFive,
+//	MinerPubKey: &minerTwoPublicKey,
+//	Nonce: RANDOM_NONCE,
+//}
+//var blockFiveHash = ComputeBlockHash(opDeleteBlockMinerTwo)
+
+
 var blockChainMock blockchain.BlockChain
 
 var allOpRecords map[string]*blockchain.OpRecord
@@ -121,12 +148,14 @@ func setUpBlockChain() {
 	opRecordsBlockThree[opRecOneHash] = &minerOneOpRecordOne
 	opRecordsBlockThree[opRecTwoHash] = &minerOneOpRecordTwo
 	opRecordsBlockFour[opRecThreeHash] = &minerTwoOpRecord
+	//opRecordsBlockFive[opRecFourHash] = &minerTwoOpRecordDelete // delete op on miner2
 
 	blocks := make(map[string]*blockchain.Block)
 	blocks[blockOneHash] = &noOPBlockMinerOne
 	blocks[blockTwoHash] = &noOPBlockMinerTwo
 	blocks[blockThreeHash] = &opBlockMinerOne
 	blocks[blockFourHash] = &opBlockMinerTwo
+	//blocks[blockFiveHash] = &opDeleteBlockMinerTwo // block with delete op for miner2
 
 	blockChainMock = blockchain.BlockChain{
 		Blocks:     blocks,
@@ -141,6 +170,7 @@ func setUpBlockChain() {
 	allOpRecords[opRecOneHash] = &minerOneOpRecordOne
 	allOpRecords[opRecTwoHash] = &minerOneOpRecordTwo
 	allOpRecords[opRecThreeHash] = &minerTwoOpRecord
+	//allOpRecords[opRecFourHash] = &minerTwoOpRecordDelete
 
 	// Traverses the chain and print out content of each block in the chain
 	//newestHash := blockChainMock.NewestHash
@@ -254,4 +284,11 @@ func TestGetAllOperationsFromBlockChain(t *testing.T) {
 	if opRecs := GetAllOperationsFromBlockChain(blockChainMock, GENESIS_BLOCK_HASH); !reflect.DeepEqual(opRecs, allOpRecords) {
 		t.Errorf("Expected all opRecords to match")
 	}
+}
+
+func TestDeletedRefundsInk(t *testing.T) {
+	//setUpBlockChain()
+	//if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 130 {
+	//	t.Errorf("Expected ink for miner 2: 240, but got %d", ink)
+	//}
 }

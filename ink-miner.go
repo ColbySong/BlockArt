@@ -669,8 +669,14 @@ func (a *MArtNode) GetGenesisBlock(ignoredreq bool, blockHash *string) error {
 
 func (a *MArtNode) GetChildren(blockHash string, blockHashes *[]string) error {
 	outLog.Printf("Reached GetChildren\n")
+	*blockHashes = make([]string, 0)
 	// TODO: traverse blockchain to find corresponding block and return it's children
-	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
+	for hash, block := range blockChain.Blocks {
+		if strings.EqualFold(block.PrevHash, blockHash) {
+			*blockHashes = append(*blockHashes, hash)
+		}
+	}
+ 	return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
 }
 
 func handleError(msg string, e error) {
@@ -702,7 +708,7 @@ func parsePath(shapeSVGString string) (string, string) {
 
 func isOpDelete(shapeSvgString string) bool {
 	buf := strings.Split(shapeSvgString, " ")
-	return strings.EqualFold(buf[0], "delete")
+	return strings.Contains(buf[0], "delete")
 }
 
 func miscErr(msg string) error {
