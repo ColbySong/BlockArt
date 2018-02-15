@@ -3,6 +3,7 @@ package util
 import (
 	"testing"
 	"reflect"
+	"fmt"
 )
 
 // go test svg_util_test.go
@@ -159,6 +160,14 @@ func TestCheckOverLap(t *testing.T) {
 	if err := CheckOverlap(regularAssSquare, squareThatDoesntOverLap); err != nil {
 		t.Error("The two path DO NOT over laps but got that they do")
 	}
+}
 
-
+func TestConvertToSvgPathString(t *testing.T) {
+	// check manually because can't compare strings with escaped characters...
+	shapeSvgStr := "M 0 0 L 0 5"
+	stroke := "red"
+	fill := "transparent"
+	ExpectedSvgPathStr := "<path d=\"M 0 0 L 0 5\" stroke=\"red\" fill=\"transparent\"/>"
+	ActualSvgPathStr := ConvertToSvgPathString(shapeSvgStr, stroke, fill)
+	fmt.Printf("conversion: actual: %s , expected: %s \n", ActualSvgPathStr, ExpectedSvgPathStr)
 }
