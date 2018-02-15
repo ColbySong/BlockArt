@@ -521,7 +521,7 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 			a.inkMiner.broadcastNewOperation(newOpRecord, opRecordHash)
 
 			// wait until return from validateNum validation
-			if _, validated := IsValidatedByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); !validated {
+			if _, validated := IsValidatedByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated {
 				newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 
 				if newInkRemaining < 0 {
@@ -740,7 +740,7 @@ func parsePath(shapeSVGString string) (string, string) {
 
 func isOpDelete(shapeSvgString string) bool {
 	buf := strings.Split(shapeSvgString, " ")
-	return strings.Contains(buf[0], "delete")
+	return strings.EqualFold(buf[0], "delete")
 }
 
 func miscErr(msg string) error {

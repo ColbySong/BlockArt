@@ -267,7 +267,7 @@ func TestDeletedRefundsInk(t *testing.T) {
 	// Set up delete operation for minerTwo's opBlockMinerTwo
 
 	// svg string
-	const SVG_DELETE_OP_THREE = "<delete path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
+	const SVG_DELETE_OP_THREE = "delete <path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transparent\"/>"
 	var svgOpThreeDelete = []byte(SVG_DELETE_OP_THREE)
 
 	// opSigR, opSigS
