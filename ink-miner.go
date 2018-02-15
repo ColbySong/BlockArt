@@ -85,14 +85,14 @@ func main() {
 	// Decode keys from strings
 	privKeyBytesRestored, _ := hex.DecodeString(privKey)
 	priv, err := x509.ParseECPrivateKey(privKeyBytesRestored)
-	handleError("Couldn't parse private key", err)
+	handleFatalError("Couldn't parse private key", err)
 	pub := priv.PublicKey
 
 	// Establish RPC channel to server
 	server, err := rpc.Dial("tcp", serverAddr)
-	handleError("Could not dial server", err)
+	handleFatalError("Could not dial server", err)
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	handleError("Could not resolve miner address", err)
+	handleFatalError("Could not resolve miner address", err)
 
 	inbound, err := net.ListenTCP("tcp", addr)
 
@@ -113,6 +113,8 @@ func main() {
 
 	go miner.startSendingHeartbeats()
 	go miner.maintainMinerConnections()
+	// TODO - should we attempt to download a blockchain from peers before starting
+	// TODO	  to mine off the genesis block?
 	go miner.startMiningBlocks()
 
 	// Start listening for RPC calls from art & miner nodes
@@ -126,7 +128,7 @@ func main() {
 	minerServer.Register(mserver)
 	minerServer.Register(mArtNode)
 
-	handleError("Listen error", err)
+	handleFatalError("Listen error", err)
 	outLog.Printf("Server started. Receiving on %s\n", inbound.Addr().String())
 
 	for {
@@ -190,29 +192,36 @@ func saveBlockToBlockChain(block blockchain.Block) {
 	removeOperationsFromPendingOperations(block.OpRecords)
 }
 
+// Get all neighbours' copies of blockchains
 func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
-	var bcs []*blockchain.BlockChain
+	outLog.Println("Retrieving blockchains from peers")
+	var chains []*blockchain.BlockChain
 
+	// TODO - maybe we just need a RLock?
 	connectedMiners.Lock()
 	for _, minerAddr := range connectedMiners.all {
 		miner, err := rpc.Dial("tcp", minerAddr.String())
-		handleError("Could not dial miner: "+minerAddr.String(), err)
+		handleNonFatalError("Could not dial miner: "+minerAddr.String(), err)
 
 		var resp blockchain.BlockChain
-		err = miner.Call("MServer.GetBlockChain", nil, &resp)
-		handleError("Could not call RPC method: MServer.GetBlockChain", err)
+		ignoredArg := true
+		if err == nil {
+			err = miner.Call("MServer.GetBlockChain", ignoredArg, &resp)
+			// TODO - should this be fatal?
+			handleFatalError("Could not call RPC method: MServer.GetBlockChain", err)
 
-		bcs = append(bcs, &resp)
+			chains = append(chains, &resp)
+		}
 	}
 	connectedMiners.Unlock()
 
-	return bcs
+	return chains
 }
 
 func (m InkMiner) getNodesFromServer() []net.Addr {
 	var nodes []net.Addr
 	err := m.server.Call("RServer.GetNodes", m.pubKey, &nodes)
-	handleError("Could not get nodes from server", err)
+	handleFatalError("Could not get nodes from server", err)
 	return nodes
 }
 
@@ -225,7 +234,7 @@ func (m InkMiner) register() blockartlib.MinerNetSettings {
 	}
 	var resp blockartlib.MinerNetSettings
 	err := m.server.Call("RServer.Register", req, &resp)
-	handleError("Could not register miner", err)
+	handleFatalError("Could not register miner", err)
 	return resp
 }
 
@@ -241,7 +250,7 @@ func (m InkMiner) startSendingHeartbeats() {
 func (m InkMiner) sendHeartBeat() {
 	var ignoredResp bool // there is no response for this RPC call
 	err := m.server.Call("RServer.HeartBeat", *m.pubKey, &ignoredResp)
-	handleError("Could not send heartbeat to server", err)
+	handleFatalError("Could not send heartbeat to server", err)
 }
 
 func (m InkMiner) startMiningBlocks() {
@@ -273,8 +282,6 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 
 		var numZeros uint8
 
-		// todo - may also need to lock m.blockChain
-
 		if len(pendingOperations.all) == 0 {
 			numZeros = m.settings.PoWDifficultyNoOpBlock
 		} else {
@@ -286,6 +293,7 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 		if len(blockChain.Blocks) == 0 {
 			nextBlockNum = FirstBlockNum
 		} else {
+			// TODO - concurrent map read and map write issue here, need to handle mutex
 			nextBlockNum = blockChain.Blocks[blockChain.NewestHash].BlockNum + 1
 		}
 
@@ -307,7 +315,7 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 		hash := ComputeBlockHash(*block)
 
 		if verifyTrailingZeros(hash, numZeros) {
-			outLog.Printf("Successfully mined a block. Hash: %s with nonce: %d\n", hash, block.Nonce)
+			outLog.Printf("Successfully mined a block: %s\n", hash)
 			return block
 		}
 
@@ -338,9 +346,11 @@ func sendBlockToAllConnectedMiners(block blockchain.Block) {
 	connectedMiners.RLock()
 	for _, minerAddr := range connectedMiners.all {
 		miner, err := rpc.Dial("tcp", minerAddr.String())
-		handleError("Could not dial miner: "+minerAddr.String(), err)
-		err = miner.Call("MServer.DisseminateBlock", block, nil)
-		handleError("Could not call RPC method: MServer.DisseminateBlock", err)
+		handleNonFatalError("Could not dial miner: "+minerAddr.String(), err)
+		if err == nil {
+			err = miner.Call("MServer.DisseminateBlock", block, nil)
+			handleNonFatalError("Could not call RPC method: MServer.DisseminateBlock", err)
+		}
 	}
 	connectedMiners.RUnlock()
 
@@ -349,9 +359,12 @@ func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 	connectedMiners.RLock()
 	for _, minerAddr := range connectedMiners.all {
 		miner, err := rpc.Dial("tcp", minerAddr.String())
-		handleError("Could not dial miner: "+minerAddr.String(), err)
-		err = miner.Call("MServer.DisseminateOperation", op, nil)
-		handleError("Could not call RPC method: MServer.DisseminateOperation", err)
+		handleNonFatalError("Could not dial miner: "+minerAddr.String(), err)
+		if err == nil {
+			err = miner.Call("MServer.DisseminateOperation", op, nil)
+			// TODO - should this be fatal?
+			handleFatalError("Could not call RPC method: MServer.DisseminateOperation", err)
+		}
 	}
 	connectedMiners.RUnlock()
 }
@@ -359,7 +372,7 @@ func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 // Compute the MD5 hash of a Block
 func ComputeBlockHash(block blockchain.Block) string {
 	bytes, err := json.Marshal(block)
-	handleError("Could not marshal block to JSON", err)
+	handleFatalError("Could not marshal block to JSON", err)
 
 	hash := md5.New()
 	hash.Write(bytes)
@@ -369,7 +382,7 @@ func ComputeBlockHash(block blockchain.Block) string {
 // Compute the MD5 hash of a OpRecord
 func ComputeOpRecordHash(opRecord blockchain.OpRecord) string {
 	bytes, err := json.Marshal(opRecord)
-	handleError("Could not marshal block to JSON", err)
+	handleFatalError("Could not marshal block to JSON", err)
 	hash := md5.New()
 	hash.Write(bytes)
 	return hex.EncodeToString(hash.Sum(nil))
@@ -454,7 +467,7 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 
 	// sign the shape
 	r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(shapeSvgPathString))
-	handleError("unable to sign shape", err)
+	handleFatalError("unable to sign shape", err)
 
 	opRecord := blockchain.OpRecord{
 		Op:           shapeSvgPathString,
@@ -517,7 +530,7 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 
 			// sign the shape
 			r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(newOp))
-			handleError("unable to sign shape", err)
+			handleFatalError("unable to sign shape", err)
 
 			inkRefunded := opRecord.InkUsed
 
@@ -722,9 +735,15 @@ func (a *MArtNode) GetChildren(blockHash string, blockHashes *[]string) error {
 	return nil
 }
 
-func handleError(msg string, e error) {
+func handleNonFatalError(msg string, e error) {
 	if e != nil {
-		errLog.Fatalf("%s, err = %s\n", msg, e.Error())
+		errLog.Printf("[ERROR] %s, err = %s\n", msg, e.Error())
+	}
+}
+
+func handleFatalError(msg string, e error) {
+	if e != nil {
+		errLog.Fatalf("[FATAL ERROR] %s, err = %s\n", msg, e.Error())
 	}
 }
 
@@ -795,11 +814,9 @@ func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error 
 	defer blockChain.Unlock()
 
 	if s.isValidBlock(block) {
+		switchToLongestBranch()
 		saveBlockToBlockChain(block)
 		sendBlockToAllConnectedMiners(block)
-		switchToLongestBranch()
-	} else {
-		errLog.Printf("Rejecting invalid block.\n")
 	}
 	return nil
 }
@@ -833,6 +850,7 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // RPC Target
 // Return entire block chain
 func (s *MServer) GetBlockChain(_ignore bool, bc *blockchain.BlockChain) error {
+	outLog.Println("Sending Blockchain to peer.")
 	blockChain.RLock()
 	defer blockChain.RUnlock()
 
@@ -851,7 +869,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	// 0. Check that this block isn't already part of the local blockChain
 	_, alreadyExists := blockChain.Blocks[hash]
 	if alreadyExists {
-		errLog.Printf("Invalid block received: block with hash already exists: %s\n", hash)
+		errLog.Printf("Invalid block received: already exists: %s\n", hash)
 		return false
 	}
 
@@ -893,6 +911,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 		return false
 	}
 
+	outLog.Printf("Valid block received: %s\n", hash)
 	return true
 }
 
@@ -912,6 +931,7 @@ func switchToLongestBranch() string {
 	}
 
 	blockChain.NewestHash = newestHash
+	outLog.Printf("Tip: %s\n", newestHash)
 	return newestHash
 }
 
@@ -982,7 +1002,9 @@ func (s *MServer) updateBlockChain() {
 	majorityBlockChainHash := computeBlockChainHash(majorityBlockChain)
 
 	if majorityBlockChainHash != computeBlockChainHash(blockChain) {
+		outLog.Println("Updating blockchain")
 		blockChain = majorityBlockChain
+		switchToLongestBranch()
 		s.updatePendingOperations()
 	}
 }
@@ -998,32 +1020,32 @@ func getMajorityBlockChainFromNeighbours() blockchain.BlockChain {
 	// Add own block chain
 	blockChains = append(blockChains, &blockChain)
 
-	hashToBlockChain := make(map[string]blockchain.BlockChain)
-	hashCount := make(map[string]int)
+	hashesToChains := make(map[string]blockchain.BlockChain)
+	hashCounts := make(map[string]int)
 
 	maxCount := 0
 	for _, bc := range blockChains {
 		hash := computeBlockChainHash(*bc)
-		hashToBlockChain[hash] = *bc
-		hashCount[hash] = hashCount[hash] + 1
+		hashesToChains[hash] = *bc
+		hashCounts[hash] = hashCounts[hash] + 1
 
-		if hashCount[hash] > maxCount {
-			maxCount = hashCount[hash]
+		if hashCounts[hash] > maxCount {
+			maxCount = hashCounts[hash]
 		}
 	}
 
 	// Remove hashes lower than maxCount
-	for hash, count := range hashCount {
+	for hash, count := range hashCounts {
 		if count < maxCount {
-			delete(hashCount, hash)
+			delete(hashCounts, hash)
 		}
 	}
 
 	currLargestBlockNum := uint32(0)
 	currLongestBlockChain := blockChain
 
-	if len(hashCount) == 0 {
-		// hashCount will be empty if all hashes equal maxCount (ie. all hashes were unique)
+	if len(hashCounts) == 0 {
+		// hashCounts will be empty if all hashes equal maxCount (ie. all hashes were unique)
 		// Pick the one with largest block num from original list
 		for _, bc := range blockChains {
 			if bc.Blocks[bc.NewestHash].BlockNum > currLargestBlockNum {
@@ -1034,8 +1056,8 @@ func getMajorityBlockChainFromNeighbours() blockchain.BlockChain {
 	} else {
 		// Out of the ties, pick the one with the largest block num
 		// If there are multiple, pick the first one encountered
-		for hash := range hashCount {
-			bc := hashToBlockChain[hash]
+		for hash := range hashCounts {
+			bc := hashesToChains[hash]
 			if bc.Blocks[bc.NewestHash].BlockNum > currLargestBlockNum {
 				currLargestBlockNum = bc.Blocks[bc.NewestHash].BlockNum
 				currLongestBlockChain = bc
@@ -1059,7 +1081,7 @@ func (s *MServer) updatePendingOperations() {
 
 func computeBlockChainHash(blockChain blockchain.BlockChain) string {
 	bytes, err := json.Marshal(blockChain)
-	handleError("Could not marshal blockchain to JSON", err)
+	handleFatalError("Could not marshal blockchain to JSON", err)
 
 	hash := md5.New()
 	hash.Write(bytes)

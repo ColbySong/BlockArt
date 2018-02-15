@@ -26,7 +26,27 @@ type OpRecord struct {
 type BlockChain struct {
 	mutex sync.RWMutex
 	Blocks     map[string]*Block // Map of block hashes to blocks
-	NewestHash string            // The tip of the longest branch
+	NewestHash string            // The tip of the longest branch TODO - confusing name?
+}
+
+func (b BlockChain) Size() int {
+	return len(b.Blocks)
+}
+
+// Return the length of the longest chain.
+// Assumes that NewestHash points at the tip of the longest chain.
+func (b BlockChain) Len() int {
+	chainLen := 0
+	nextHash := b.NewestHash
+	for {
+		block, exists := b.Blocks[nextHash]
+		if !exists {
+			return chainLen
+		} else {
+			chainLen = chainLen + 1
+			nextHash = block.PrevHash
+		}
+	}
 }
 
 func (b BlockChain) Lock() {
