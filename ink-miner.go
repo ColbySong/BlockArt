@@ -678,7 +678,7 @@ func (a *MArtNode) GetChildren(blockHash string, blockHashes *[]string) error {
 			*blockHashes = append(*blockHashes, hash)
 		}
 	}
-
+	return nil
 }
 
 func handleError(msg string, e error) {
