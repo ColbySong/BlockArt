@@ -39,6 +39,13 @@ type ConnectedMiners struct {
 	all []net.Addr
 }
 
+func (miners *ConnectedMiners) removeMiner(addr net.Addr) {
+	miners.Lock()
+	defer miners.Unlock()
+
+	// TODO - stub
+}
+
 type PendingOperations struct {
 	sync.RWMutex
 	all map[string]*blockchain.OpRecord
@@ -107,9 +114,7 @@ func main() {
 	settings := miner.register()
 	miner.settings = &settings
 
-	blockChain.Lock()
-	blockChain.NewestHash = settings.GenesisBlockHash
-	blockChain.Unlock()
+	blockChain.SetNewestHash(settings.GenesisBlockHash)
 
 	go miner.startSendingHeartbeats()
 	go miner.maintainMinerConnections()
@@ -182,12 +187,7 @@ func (m InkMiner) broadcastNewOperation(op blockchain.OpRecord, opRecordHash str
 func saveBlockToBlockChain(block blockchain.Block) {
 	blockHash := ComputeBlockHash(block)
 
-	blockChain.Blocks[blockHash] = &block
-
-	// Update if the block is new tip
-	if block.BlockNum > blockChain.Blocks[blockChain.NewestHash].BlockNum {
-		blockChain.NewestHash = blockHash
-	}
+	blockChain.AddBlockAndUpdateTip(&block, blockHash)
 
 	removeOperationsFromPendingOperations(block.OpRecords)
 }
@@ -204,9 +204,8 @@ func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
 		handleNonFatalError("Could not dial miner: "+minerAddr.String(), err)
 
 		var resp blockchain.BlockChain
-		ignoredArg := true
 		if err == nil {
-			err = miner.Call("MServer.GetBlockChain", ignoredArg, &resp)
+			err = miner.Call("MServer.GetBlockChain", true, &resp)
 			// TODO - should this be fatal?
 			handleFatalError("Could not call RPC method: MServer.GetBlockChain", err)
 
@@ -255,20 +254,12 @@ func (m InkMiner) sendHeartBeat() {
 
 func (m InkMiner) startMiningBlocks() {
 	for {
-		// Lock entire blockchain while computing hash so that if you receive
-		// disseminated blocks from other miners, you don't update the blockchain
-		// while computing current hash
-		blockChain.Lock()
-
 		block := m.computeBlock()
 
 		hash := ComputeBlockHash(*block)
-		blockChain.Blocks[hash] = block
-		blockChain.NewestHash = hash
+		blockChain.AddBlockAndUpdateTip(block, hash)
 
 		broadcastNewBlock(*block)
-
-		blockChain.Unlock()
 	}
 }
 
@@ -277,6 +268,7 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 	defer pendingOperations.Unlock()
 
 	var nonce uint32 = FirstNonce
+
 	for {
 		pendingOperations.Lock()
 
@@ -290,11 +282,11 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 
 		var nextBlockNum uint32
 
-		if len(blockChain.Blocks) == 0 {
+		if blockChain.GetSize() == 0 {
 			nextBlockNum = FirstBlockNum
 		} else {
 			// TODO - concurrent map read and map write issue here, need to handle mutex
-			nextBlockNum = blockChain.Blocks[blockChain.NewestHash].BlockNum + 1
+			nextBlockNum = blockChain.GetNewestBlockNum() + 1
 		}
 
 		// make copy of pending OpRecords to add to newly generated block
@@ -306,7 +298,7 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 
 		block := &blockchain.Block{
 			BlockNum:    nextBlockNum,
-			PrevHash:    blockChain.NewestHash,
+			PrevHash:    blockChain.GetNewestHash(),
 			OpRecords:   incorporatedOps,
 			MinerPubKey: m.pubKey,
 			Nonce:       nonce,
@@ -371,20 +363,20 @@ func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 
 // Compute the MD5 hash of a Block
 func ComputeBlockHash(block blockchain.Block) string {
-	bytes, err := json.Marshal(block)
+	blockBytes, err := json.Marshal(block)
 	handleFatalError("Could not marshal block to JSON", err)
 
 	hash := md5.New()
-	hash.Write(bytes)
+	hash.Write(blockBytes)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
 // Compute the MD5 hash of a OpRecord
 func ComputeOpRecordHash(opRecord blockchain.OpRecord) string {
-	bytes, err := json.Marshal(opRecord)
+	opBytes, err := json.Marshal(opRecord)
 	handleFatalError("Could not marshal block to JSON", err)
 	hash := md5.New()
-	hash.Write(bytes)
+	hash.Write(opBytes)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
@@ -576,8 +568,8 @@ func IsValidatedByValidateNum(opRecordHash string, validateNum uint8, genesisBlo
 		if _, exists := pendingOperations.all[opRecordHash]; !exists {
 			for {
 				if opRecord, blockHash, exists := GetOpRecordTraversal(opRecordHash, genesisBlockHash); exists {
-					blockNumOfOp := blockChain.Blocks[blockHash].BlockNum
-					newestBlockNum := blockChain.Blocks[blockChain.NewestHash].BlockNum
+					blockNumOfOp := blockChain.GetBlockNum(blockHash)
+					newestBlockNum := blockChain.GetNewestBlockNum()
 					if newestBlockNum-blockNumOfOp >= uint32(validateNum) {
 						if VerifyOpRecordAuthor(*pubKey, opRecord) {
 							return blockHash, true
@@ -605,9 +597,9 @@ func VerifyOpRecordAuthor(requestorPublicKey ecdsa.PublicKey, opRecord blockchai
 // given the shapeHash, return true if it is in the longest chain of the blockchain
 // if true, also return the opRecord and the corresponding blockHash of the block that the shapeHash is contained in
 func GetOpRecordTraversal(shapeHash string, genesisBlockHash string) (blockchain.OpRecord, string, bool) {
-	newestHash := blockChain.NewestHash
-	for blockHash := newestHash; blockHash != genesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
-		block := blockChain.Blocks[blockHash]
+	newestHash := blockChain.GetNewestHash()
+	for blockHash := newestHash; blockHash != genesisBlockHash; blockHash = blockChain.GetPrevHash(blockHash) {
+		block := blockChain.GetBlockByHash(blockHash)
 		if len(block.OpRecords) > 0 {
 			if opRecord, exists := block.OpRecords[shapeHash]; exists {
 				return *opRecord, blockHash, true
@@ -620,9 +612,9 @@ func GetOpRecordTraversal(shapeHash string, genesisBlockHash string) (blockchain
 // returns the amount of ink owned by @param pubKey
 func GetInkTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey) int {
 	inkRemaining := 0
-	newestHash := blockChain.NewestHash
-	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
-		block := blockChain.Blocks[blockHash]
+	newestHash := blockChain.GetNewestHash()
+	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash; blockHash = blockChain.GetPrevHash(blockHash) {
+		block := blockChain.GetBlockByHash(blockHash)
 		if len(block.OpRecords) == 0 { // NoOp block
 			if reflect.DeepEqual(*block.MinerPubKey, *pubKey) {
 				inkRemaining += int(inkMiner.settings.InkPerNoOpBlock)
@@ -649,10 +641,10 @@ func GetInkTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey) int {
 // returns all the shapes on the canvas EXCEPT the ones drawn by @param pubKey
 // strings are in the form of "M 0 0 L 50 50"
 func GetShapeTraversal(inkMiner *InkMiner, pubKey *ecdsa.PublicKey) []string {
-	newestHash := blockChain.NewestHash
+	newestHash := blockChain.GetNewestHash()
 	var shapesDrawnByOtherApps []string
-	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
-		block := blockChain.Blocks[blockHash]
+	for blockHash := newestHash; blockHash != inkMiner.settings.GenesisBlockHash; blockHash = blockChain.GetPrevHash(blockHash) {
+		block := blockChain.GetBlockByHash(blockHash)
 		if len(block.OpRecords) != 0 {
 			shapesDrawnByOtherApps = append(shapesDrawnByOtherApps, getShapesFromOpRecords(block.OpRecords, pubKey)...)
 		}
@@ -686,8 +678,9 @@ func getShapesFromOpRecords(opRecords map[string]*blockchain.OpRecord, pubKey *e
 // Must supply valid corresponding genesisBlockHash
 func GetAllOperationsFromBlockChain(bc blockchain.BlockChain, genesisBlockHash string) map[string]*blockchain.OpRecord {
 	allOps := make(map[string]*blockchain.OpRecord)
-	for blockHash := bc.NewestHash; blockHash != genesisBlockHash; blockHash = bc.Blocks[blockHash].PrevHash {
-		blockOpRecords := bc.Blocks[blockHash].OpRecords
+	for blockHash := bc.GetNewestHash(); blockHash != genesisBlockHash; blockHash = bc.GetPrevHash(blockHash) {
+		// TODO-dc - potential concurrency issue, accesses OpRecords map directly
+		blockOpRecords := bc.GetBlockByHash(blockHash).OpRecords
 		if len(blockOpRecords) != 0 {
 			for opHash, op := range blockOpRecords {
 				allOps[opHash] = op
@@ -700,10 +693,11 @@ func GetAllOperationsFromBlockChain(bc blockchain.BlockChain, genesisBlockHash s
 func (a *MArtNode) GetShapes(blockHash string, shapeHashes *[]string) error {
 	outLog.Printf("Reached GetShapes\n")
 	// TODO: Can each key (blockhash) have more than 1 blocks??
-	blockChain.RLock()
-	defer blockChain.RUnlock()
 
-	if block, ok := blockChain.Blocks[blockHash]; ok {
+	exists := blockChain.DoesBlockExist(blockHash)
+
+	if exists {
+		block := blockChain.GetBlockByHash(blockHash)
 		shapeHashes := make([]string, len(block.OpRecords))
 		var i = 0
 		for _, v := range block.OpRecords {
@@ -725,11 +719,11 @@ func (a *MArtNode) GetChildren(blockHash string, blockHashes *[]string) error {
 	outLog.Printf("Reached GetChildren\n")
 	*blockHashes = make([]string, 0)
 	genesisBlockHash := a.inkMiner.settings.GenesisBlockHash
-	_, exists := blockChain.Blocks[blockHash]
+	exists := blockChain.DoesBlockExist(blockHash)
 	if !strings.EqualFold(genesisBlockHash, blockHash) && !exists {
 		return errors.New(blockartlib.ErrorName[blockartlib.INVALIDBLOCKHASH])
 	}
-	for hash, block := range blockChain.Blocks {
+	for hash, block := range blockChain.Blocks { // TODO-dc: potential concurrent map read problem here
 		if strings.EqualFold(block.PrevHash, blockHash) {
 			*blockHashes = append(*blockHashes, hash)
 		}
@@ -811,9 +805,6 @@ func miscErr(msg string) error {
 // 3) If block number is greater than local blockchain's latest block number
 // Otherwise, do not disseminate
 func (s *MServer) DisseminateBlock(block blockchain.Block, _ignore *bool) error {
-	// TODO: May need to change locking semantics
-	blockChain.Lock()
-	defer blockChain.Unlock()
 
 	if s.isValidBlock(block) {
 		switchToLongestBranch()
@@ -853,40 +844,35 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // Return entire block chain
 func (s *MServer) GetBlockChain(_ignore bool, bc *blockchain.BlockChain) error {
 	outLog.Println("Sending Blockchain to peer.")
-	blockChain.RLock()
-	defer blockChain.RUnlock()
-
 	*bc = blockChain
-
 	return nil
 }
 
 // Checks if a block is valid, including its operations.
 func (s *MServer) isValidBlock(block blockchain.Block) bool {
-	blockChain.Lock() // TODO - this is also locked by the caller, what will happen?
-	defer blockChain.Unlock()
 
 	hash := ComputeBlockHash(block)
 
 	// 0. Check that this block isn't already part of the local blockChain
-	_, alreadyExists := blockChain.Blocks[hash]
+	alreadyExists := blockChain.DoesBlockExist(hash)
 	if alreadyExists {
 		errLog.Printf("Invalid block received: already exists: %s\n", hash)
 		return false
 	}
 
 	// 1. Check for valid block num
-	prevBlock, prevBlockExistsLocally := blockChain.Blocks[block.PrevHash]
+	prevBlockExistsLocally := blockChain.DoesBlockExist(block.PrevHash)
 	if !prevBlockExistsLocally {
 		s.updateBlockChain()
 	}
 
-	prevBlock, prevBlockExistsLocally = blockChain.Blocks[block.PrevHash]
+	prevBlockExistsLocally = blockChain.DoesBlockExist(block.PrevHash)
 	if !prevBlockExistsLocally {
 		errLog.Printf("Invalid block received: no previous block found\n")
 		return false
 	}
 
+	prevBlock := blockChain.GetBlockByHash(block.PrevHash)
 	isNextBlock := block.BlockNum == prevBlock.BlockNum+1
 	if !isNextBlock {
 		errLog.Printf("Invalid block received: invalid BlockNum [%d]\n", block.BlockNum)
@@ -918,21 +904,17 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 }
 
 func switchToLongestBranch() string {
-	// TODO - how are we gonna handle locking this?
-	blockChain.Lock()
-	defer blockChain.Unlock()
-
 	maxBlockNum := uint32(0)
 	var newestHash string
 
-	for hash, block := range blockChain.Blocks {
+	for hash, block := range blockChain.Blocks { // TODO-dc: potential concurrent map read problem here
 		if block.BlockNum > maxBlockNum {
 			maxBlockNum = block.BlockNum
 			newestHash = hash
 		}
 	}
 
-	blockChain.NewestHash = newestHash
+	blockChain.SetNewestHash(newestHash) // TODO-dc: should use setter
 	outLog.Printf("Tip: %s\n", newestHash)
 	return newestHash
 }
@@ -1026,9 +1008,9 @@ func getMajorityBlockChainFromNeighbours() blockchain.BlockChain {
 	hashCounts := make(map[string]int)
 
 	maxCount := 0
-	for _, bc := range blockChains {
-		hash := computeBlockChainHash(*bc)
-		hashesToChains[hash] = *bc
+	for _, blockChain := range blockChains {
+		hash := computeBlockChainHash(*blockChain)
+		hashesToChains[hash] = *blockChain
 		hashCounts[hash] = hashCounts[hash] + 1
 
 		if hashCounts[hash] > maxCount {
@@ -1049,20 +1031,20 @@ func getMajorityBlockChainFromNeighbours() blockchain.BlockChain {
 	if len(hashCounts) == 0 {
 		// hashCounts will be empty if all hashes equal maxCount (ie. all hashes were unique)
 		// Pick the one with largest block num from original list
-		for _, bc := range blockChains {
-			if bc.Blocks[bc.NewestHash].BlockNum > currLargestBlockNum {
-				currLargestBlockNum = bc.Blocks[bc.NewestHash].BlockNum
-				currLongestBlockChain = *bc
+		for _, blockChain := range blockChains {
+			if blockChain.GetNewestBlockNum() > currLargestBlockNum {
+				currLargestBlockNum = blockChain.GetNewestBlockNum()
+				currLongestBlockChain = *blockChain
 			}
 		}
 	} else {
 		// Out of the ties, pick the one with the largest block num
 		// If there are multiple, pick the first one encountered
 		for hash := range hashCounts {
-			bc := hashesToChains[hash]
-			if bc.Blocks[bc.NewestHash].BlockNum > currLargestBlockNum {
-				currLargestBlockNum = bc.Blocks[bc.NewestHash].BlockNum
-				currLongestBlockChain = bc
+			blockChain := hashesToChains[hash]
+			if blockChain.GetNewestBlockNum() > currLargestBlockNum {
+				currLargestBlockNum = blockChain.GetNewestBlockNum()
+				currLongestBlockChain = blockChain
 			}
 		}
 	}
@@ -1082,11 +1064,11 @@ func (s *MServer) updatePendingOperations() {
 }
 
 func computeBlockChainHash(blockChain blockchain.BlockChain) string {
-	bytes, err := json.Marshal(blockChain)
+	chainBytes, err := json.Marshal(blockChain)
 	handleFatalError("Could not marshal blockchain to JSON", err)
 
 	hash := md5.New()
-	hash.Write(bytes)
+	hash.Write(chainBytes)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
@@ -1095,8 +1077,8 @@ func computeBlockChainHash(blockChain blockchain.BlockChain) string {
 func PrintBlockChain() {
 	fmt.Println("-----PRINTING BLOCK CHAIN-----")
 	GenesisBlockHash := "83218ac34c1834c26781fe4bde918ee4"
-	for blockHash := blockChain.NewestHash; blockHash != GenesisBlockHash; blockHash = blockChain.Blocks[blockHash].PrevHash {
-		block := blockChain.Blocks[blockHash]
+	for blockHash := blockChain.GetNewestHash(); blockHash != GenesisBlockHash; blockHash = blockChain.GetPrevHash(blockHash) {
+		block := blockChain.GetBlockByHash(blockHash)
 		fmt.Printf("Block Num: %d \nPrevHash: %s \nMinerPubKey: %+v\n", block.BlockNum, block.PrevHash, block.MinerPubKey.X)
 		if len(block.OpRecords) == 0 {
 			fmt.Printf("Block %d is a no op block\n\n", block.BlockNum)
