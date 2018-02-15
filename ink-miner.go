@@ -408,6 +408,28 @@ func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeRe
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 	}
 
+	// validate against pending operations
+	var pendingInkUsed int
+	for _, pendingOp := range pendingOperations.all {
+		if reflect.DeepEqual(pendingOp.AuthorPubKey, *a.inkMiner.pubKey) {
+			if isOpDelete(pendingOp.Op) {
+				pendingInkUsed -= int(pendingOp.InkUsed)
+			} else {
+				pendingInkUsed += int(pendingOp.InkUsed)
+			}
+		} else {
+			svgPathString, _ := parsePath(pendingOp.Op)
+			svgPathCoords, _ := util.ConvertPathToPoints(svgPathString)
+			if util.CheckOverlap(requestedSVGPath, svgPathCoords) != nil {
+				return errors.New(util.ShapeErrorName[util.SHAPEOVERLAP])
+			}
+		}
+	}
+
+	if pendingInkUsed + int(inkRequired) > inkRemaining {
+		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
+	}
+
 	// create svg path
 	shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
 
