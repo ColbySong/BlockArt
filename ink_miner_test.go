@@ -21,7 +21,7 @@ const SVG_OP_THREE = "<path d=\"M 50 50 L 60 60\" stroke=\"red\" fill=\"transpar
 const SVG_INVALID_OP_ONE = "<path d=\"M 30 30 L 30 800\" stroke=\"red\" fill=\"transparent\"/>"
 const SVG_VALID_OP_ONE = "<path d=\"M 300 300 L 310 310\" stroke=\"red\" fill=\"transparent\"/>"
 
-var p256 = elliptic.P256()g
+var p256 = elliptic.P256()
 var minerOnePrivateKey, _ = ecdsa.GenerateKey(p256, rand.Reader)
 var minerOnePublicKey = minerOnePrivateKey.PublicKey
 var minerTwoPrivateKey, _ = ecdsa.GenerateKey(p256, rand.Reader)
