@@ -397,8 +397,7 @@ func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 		handleNonFatalError("Could not dial miner", err)
 		if err == nil {
 			err = miner.Call("MServer.DisseminateOperation", op, nil)
-			// TODO - should this be fatal?
-			handleFatalError("Could not call RPC method: MServer.DisseminateOperation", err)
+			handleNonFatalError("Could not call RPC method: MServer.DisseminateOperation", err)
 		}
 		miner.Close()
 	}
