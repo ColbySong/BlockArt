@@ -38,18 +38,34 @@ type ConnectedMiners struct {
 	all map[string]*net.Addr
 }
 
-func (miners *ConnectedMiners) AddMiner(addr net.Addr) {
+func (miners *ConnectedMiners) AddMiner(addr net.Addr, myAddr net.Addr) {
 	miners.Lock()
 	defer miners.Unlock()
 
-	miners.all[addr.String()] = &addr
+	_, exists := miners.all[addr.String()]
+
+	if !exists {
+		miners.all[addr.String()] = &addr
+		outLog.Printf("Adding miner [%s]\n", addr.String())
+
+		// Newly connected miner needs to know about this miner
+		miner, err := rpc.Dial("tcp", addr.String())
+		handleNonFatalError("Could not dial miner", err)
+
+		var resp bool // unused
+		if err == nil {
+			err = miner.Call("MServer.RegisterMiner", myAddr.String(), &resp)
+			handleNonFatalError("Could not call RPC method: MServer.RegisterMiner", err)
+			miner.Close()
+		}
+	}
 }
 
 func (miners *ConnectedMiners) RemoveMiner(addrString string) {
 	miners.Lock()
 	defer miners.Unlock()
 
-	outLog.Printf("Disconnected miner: %s\n", addrString)
+	outLog.Printf("Miner disconnected [%s]\n", addrString)
 	delete(miners.all, addrString)
 }
 
@@ -153,7 +169,7 @@ func main() {
 	minerServer.Register(mArtNode)
 
 	handleFatalError("Listen error", err)
-	outLog.Printf("Server started. Receiving on %s\n", inbound.Addr().String())
+	outLog.Printf("MServer started. Receiving on %s\n", inbound.Addr().String())
 
 	for {
 		conn, _ := inbound.Accept()
@@ -163,10 +179,9 @@ func main() {
 
 // Keep track of minimum number of miners at all times (MinNumMinerConnections)
 func (m InkMiner) maintainMinerConnections() {
-	m.getNodesFromServer()
-
 	for {
 		if connectedMiners.GetConnectionCount() < m.settings.MinNumMinerConnections {
+			outLog.Println("Asking server for more miners...")
 			m.getNodesFromServer()
 		}
 		time.Sleep(time.Duration(m.settings.HeartBeat) * time.Millisecond)
@@ -208,7 +223,7 @@ func saveBlockToBlockChain(block blockchain.Block) {
 
 // Get all neighbours' copies of blockchains
 func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
-	outLog.Println("Retrieving blockchains from peers")
+	outLog.Println("\u25BC Downloading blockchains from peers")
 	var chains []*blockchain.BlockChain
 
 	// TODO - maybe we just need a RLock?
@@ -239,9 +254,8 @@ func (m InkMiner) getNodesFromServer() {
 	var nodes []net.Addr
 	err := m.server.Call("RServer.GetNodes", m.pubKey, &nodes)
 	handleFatalError("Could not get nodes from server", err)
-	fmt.Println(nodes)
 	for _, nodeAddr := range nodes {
-		connectedMiners.AddMiner(nodeAddr)
+		connectedMiners.AddMiner(nodeAddr, m.addr)
 	}
 }
 
@@ -356,8 +370,8 @@ func removeOperationsFromPendingOperations(opRecords map[string]*blockchain.OpRe
 
 func sendBlockToAllConnectedMiners(block blockchain.Block) {
 	connectedMiners.RLock()
-	outLog.Println(len(connectedMiners.all))
 	for minerAddrString := range connectedMiners.all {
+		outLog.Printf("\u25B2 Sending block to miner [%s]\n", minerAddrString)
 		miner, err := rpc.Dial("tcp", minerAddrString)
 		if err != nil {
 			defer connectedMiners.RemoveMiner(minerAddrString)
@@ -369,8 +383,8 @@ func sendBlockToAllConnectedMiners(block blockchain.Block) {
 		}
 	}
 	connectedMiners.RUnlock()
-
 }
+
 func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 	connectedMiners.RLock()
 	for minerAddrString := range connectedMiners.all {
@@ -420,7 +434,7 @@ func verifyTrailingZeros(hash string, numZeros uint8) bool {
 // Give requesting art node the canvas settings
 // Also check if the art node knows your private key
 func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockartlib.CanvasSettings) error {
-	outLog.Printf("Reached OpenCanvas")
+	outLog.Printf("Reached OpenCanvas\n")
 	if reflect.DeepEqual(privKey, *a.inkMiner.privKey) {
 		*canvasSettings = a.inkMiner.settings.CanvasSettings
 		return nil
@@ -429,7 +443,7 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 }
 
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
-	outLog.Printf("Reached AddShape \n")
+	outLog.Printf("Reached AddShape\n")
 	inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
 	if inkRemaining <= 0 {
 		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
@@ -869,7 +883,7 @@ func (s *MServer) DisseminateOperation(op blockchain.OpRecord, _ignore *bool) er
 // RPC Target
 // Return entire block chain
 func (s *MServer) GetBlockChain(_ignore bool, bc *blockchain.BlockChain) error {
-	outLog.Println("Sending Blockchain to peer.")
+	outLog.Println("\u25B2 Uploading blockchain to peer.")
 	*bc = blockChain
 	return nil
 }
@@ -1098,15 +1112,14 @@ func computeBlockChainHash(blockChain blockchain.BlockChain) string {
 }
 
 // RPC Target
+// Registers a miner locally for bidirectional connection
 func (s *MServer) RegisterMiner(addr string, resp *bool) error {
 	parsedAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if s.inkMiner.addr.String() == parsedAddr.String() {
-		outLog.Println("SELF")
-		return nil
+	if s.inkMiner.addr.String() != parsedAddr.String() {
+		handleFatalError("Could not parse address", err)
+		go connectedMiners.AddMiner(parsedAddr, s.inkMiner.addr)
 	}
-
-	handleFatalError("Could not parse address", err)
-	connectedMiners.AddMiner(parsedAddr)
+	*resp = true
 	return nil
 }
 
