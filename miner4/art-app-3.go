@@ -16,12 +16,12 @@ import (
 func main() {
 	flag.Parse()
 	if len(flag.Args()) != 2 {
-		fmt.Fprintln(os.Stderr, "ArtApp4 [miner ip:port] [privKey]")
+		fmt.Fprintln(os.Stderr, "ArtApp3 [privKey] [miner ip:port]")
 		os.Exit(1)
 	}
 
-	minerAddr := flag.Arg(0)
-	privKeyToParse := flag.Arg(1)
+	privKeyToParse := flag.Arg(0)
+	minerAddr := flag.Arg(1)
 	privKey, _ := ParsePrivateKey(privKeyToParse)
 	validateNum := uint8(2)
 
@@ -36,18 +36,18 @@ func main() {
 	if err != nil {
 		return
 	}
-	fmt.Printf("[ArtApp_4] CurrentInk: %d\n", ink)
+	fmt.Printf("[ArtApp_3] CurrentInk: %d\n", ink)
 
-	// AddShape black line
-	shape1SvgStr := "M 70 140 L 90 160" //inkReq: 28.284.... 28
+	// AddShape green line
+	shape1SvgStr := "M 50 120 L 80 120" //inkReq: 30
 	fill1 := "transparent"
-	stroke1 := "black"
-	fmt.Printf("[ArtApp_4] AddShape1[Incoming]: svgstr: %s, fill: %s, stroke: %s\n", shape1SvgStr, fill1, stroke1)
+	stroke1 := "green"
+	fmt.Printf("[ArtApp_3] AddShape1[Incoming]: svgstr: %s, fill: %s, stroke: %s\n", shape1SvgStr, fill1, stroke1)
 	shapeHash1, blockHash1, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, shape1SvgStr, fill1, stroke1)
 	if checkError(err) != nil {
 		return
 	}
-	fmt.Printf("[ArtApp_4] AddShape1[Return]: shapeHash: %s, blockHash: %s ,ink: %d\n", shapeHash1, blockHash1, ink)
+	fmt.Printf("[ArtApp_3] AddShape1[Return]: shapeHash: %s, blockHash: %s ,ink: %d\n", shapeHash1, blockHash1, ink)
 
 	// Close the canvas.
 	_, err = canvas.CloseCanvas()
@@ -61,7 +61,7 @@ func main() {
 // If error is non-nil, print it out and return it.
 func checkError(err error) error {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtApp_4] Error ", err.Error())
+		fmt.Fprintf(os.Stderr, "[ArtApp_3] Error ", err.Error())
 		return err
 	}
 	return nil
