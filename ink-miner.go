@@ -933,8 +933,7 @@ func switchToLongestBranch() string {
 		}
 	}
 
-	blockChain.SetNewestHash(newestHash) // TODO-dc: should use setter
-	outLog.Printf("Tip: %s\n", newestHash)
+	blockChain.SetNewestHash(newestHash)
 	return newestHash
 }
 
