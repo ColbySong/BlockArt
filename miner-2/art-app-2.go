@@ -9,20 +9,14 @@ import (
 	"fmt"
 	"os"
 
-	"flag"
-
 	"../blockartlib"
+	"../util"
 )
 
 func main() {
-	flag.Parse()
-	if len(flag.Args()) != 2 {
-		fmt.Fprintln(os.Stderr, "ArtApp2 [privKey] [miner ip:port]")
-		os.Exit(1)
-	}
-
-	privKeyToParse := flag.Arg(0)
-	minerAddr := flag.Arg(1)
+	privKeyToParse := util.GetMinerPrivateKey()
+	minerAddr := util.GetMinerAddr()
+	fmt.Printf("Miner Private Key: %s\nMiner Address: %s\n", privKeyToParse, minerAddr)
 	privKey, _ := ParsePrivateKey(privKeyToParse)
 	validateNum := uint8(2)
 
