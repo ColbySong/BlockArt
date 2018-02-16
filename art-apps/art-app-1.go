@@ -1,4 +1,4 @@
-package art_apps
+package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to
 // this art-app.go file
@@ -39,7 +39,7 @@ func main() {
 	fmt.Printf("[ArtApp_1] CurrentInk: %d\n", ink)
 
 	// AddShape blue transparent square
-	shape1SvgStr := "M 50 50 L 70 50 L 70 70 L 50 70 Z" //inkReq: 40
+	shape1SvgStr := "M 50 50 L 70 50 L 70 70 L 50 70 Z" //inkReq: 400
 	fill1 := "transparent"
 	stroke1 := "blue"
 	fmt.Printf("[ArtApp_1] AddShape1[Incoming]: svgstr: %s, fill: %s, stroke: %s\n", shape1SvgStr, fill1, stroke1)
@@ -50,7 +50,7 @@ func main() {
 	fmt.Printf("[ArtApp_1] AddShape1[Return]: shapeHash: %s, blockHash: %s ,ink: %d\n", shapeHash1, blockHash1, ink)
 
 	// AddShape blue outline/filled square
-	shape2SvgStr := "M 80 80 L 100 80 L 100 100 L 80 100 Z" //inkReq: 40
+	shape2SvgStr := "M 80 80 L 100 80 L 100 100 L 80 100 Z" //inkReq: 400
 	fill2 := "blue"
 	stroke2 := "blue"
 	fmt.Printf("[ArtApp_1] AddShape2[Incoming]: svgstr: %s, fill: %s, stroke: %s", shape2SvgStr, fill2, stroke2)

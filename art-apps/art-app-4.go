@@ -1,4 +1,4 @@
-package art_apps
+package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to
 // this art-app.go file
