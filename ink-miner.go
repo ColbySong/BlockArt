@@ -36,16 +36,30 @@ const FirstBlockNum = 1
 
 type ConnectedMiners struct {
 	sync.RWMutex
-	all []net.Addr
+	all map[string]*net.Addr
 }
 
-func (miners *ConnectedMiners) removeMiner(addr net.Addr) {
+func (miners *ConnectedMiners) AddMiner(addr net.Addr) {
 	miners.Lock()
 	defer miners.Unlock()
 
-	// TODO - stub
+	miners.all[addr.String()] = &addr
 }
 
+func (miners *ConnectedMiners) RemoveMiner(addrString string) {
+	miners.Lock()
+	defer miners.Unlock()
+
+	outLog.Printf("Disconnected miner: %s\n", addrString)
+	delete(miners.all, addrString)
+}
+
+func (miners *ConnectedMiners) GetConnectionCount() uint8 {
+	miners.RLock()
+	defer miners.RUnlock()
+
+	return uint8(len(miners.all))
+}
 type PendingOperations struct {
 	sync.RWMutex
 	all map[string]*blockchain.OpRecord
@@ -69,7 +83,7 @@ type MArtNode struct {
 var (
 	errLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
-	connectedMiners               = ConnectedMiners{all: make([]net.Addr, 0, 0)}
+	connectedMiners               = ConnectedMiners{all: make(map[string]*net.Addr)}
 	pendingOperations             = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
 	blockChain                    = blockchain.BlockChain{Blocks: make(map[string]*blockchain.Block)}
 )
@@ -116,7 +130,7 @@ func main() {
 
 	blockChain.SetNewestHash(settings.GenesisBlockHash)
 
-	go miner.startSendingHeartbeats()
+	go miner.startSendingHeartbeatsToServer()
 	go miner.maintainMinerConnections()
 	// TODO - should we attempt to download a blockchain from peers before starting
 	// TODO	  to mine off the genesis block?
@@ -144,17 +158,12 @@ func main() {
 
 // Keep track of minimum number of miners at all times (MinNumMinerConnections)
 func (m InkMiner) maintainMinerConnections() {
-	connectedMiners.Lock()
-	connectedMiners.all = m.getNodesFromServer()
-	connectedMiners.Unlock()
+	m.getNodesFromServer()
 
 	for {
-		connectedMiners.Lock()
-		if uint8(len(connectedMiners.all)) < m.settings.MinNumMinerConnections {
-			connectedMiners.all = m.getNodesFromServer()
+		if connectedMiners.GetConnectionCount() < m.settings.MinNumMinerConnections {
+			m.getNodesFromServer()
 		}
-		connectedMiners.Unlock()
-
 		time.Sleep(time.Duration(m.settings.HeartBeat) * time.Millisecond)
 	}
 }
@@ -198,30 +207,36 @@ func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
 	var chains []*blockchain.BlockChain
 
 	// TODO - maybe we just need a RLock?
-	connectedMiners.Lock()
-	for _, minerAddr := range connectedMiners.all {
-		miner, err := rpc.Dial("tcp", minerAddr.String())
-		handleNonFatalError("Could not dial miner: "+minerAddr.String(), err)
+	connectedMiners.RLock()
+	for minerAddrString := range connectedMiners.all {
+		miner, err := rpc.Dial("tcp", minerAddrString)
+		if err != nil {
+			defer connectedMiners.RemoveMiner(minerAddrString)
+		}
+		handleNonFatalError("Could not dial miner", err)
 
 		var resp blockchain.BlockChain
 		if err == nil {
 			err = miner.Call("MServer.GetBlockChain", true, &resp)
+
 			// TODO - should this be fatal?
 			handleFatalError("Could not call RPC method: MServer.GetBlockChain", err)
 
 			chains = append(chains, &resp)
 		}
 	}
-	connectedMiners.Unlock()
+	connectedMiners.RUnlock()
 
 	return chains
 }
 
-func (m InkMiner) getNodesFromServer() []net.Addr {
+func (m InkMiner) getNodesFromServer() {
 	var nodes []net.Addr
 	err := m.server.Call("RServer.GetNodes", m.pubKey, &nodes)
 	handleFatalError("Could not get nodes from server", err)
-	return nodes
+	for _, nodeAddr := range nodes {
+		connectedMiners.AddMiner(nodeAddr)
+	}
 }
 
 // Registers the miner node on the server by making an RPC call.
@@ -238,7 +253,7 @@ func (m InkMiner) register() blockartlib.MinerNetSettings {
 }
 
 // Periodically send heartbeats to the server at period defined by server times a frequency multiplier
-func (m InkMiner) startSendingHeartbeats() {
+func (m InkMiner) startSendingHeartbeatsToServer() {
 	for {
 		m.sendHeartBeat()
 		time.Sleep(time.Duration(m.settings.HeartBeat) / HeartbeatMultiplier * time.Millisecond)
@@ -307,7 +322,7 @@ func (m InkMiner) computeBlock() *blockchain.Block {
 		hash := ComputeBlockHash(*block)
 
 		if verifyTrailingZeros(hash, numZeros) {
-			outLog.Printf("Successfully mined a block: %s\n", hash)
+			outLog.Printf("Block mined: %s\n", hash)
 			return block
 		}
 
@@ -335,9 +350,12 @@ func removeOperationsFromPendingOperations(opRecords map[string]*blockchain.OpRe
 
 func sendBlockToAllConnectedMiners(block blockchain.Block) {
 	connectedMiners.RLock()
-	for _, minerAddr := range connectedMiners.all {
-		miner, err := rpc.Dial("tcp", minerAddr.String())
-		handleNonFatalError("Could not dial miner: "+minerAddr.String(), err)
+	for minerAddrString := range connectedMiners.all {
+		miner, err := rpc.Dial("tcp", minerAddrString)
+		if err != nil {
+			defer connectedMiners.RemoveMiner(minerAddrString)
+		}
+		handleNonFatalError("Could not dial miner", err)
 		if err == nil {
 			err = miner.Call("MServer.DisseminateBlock", block, nil)
 			handleNonFatalError("Could not call RPC method: MServer.DisseminateBlock", err)
@@ -348,9 +366,12 @@ func sendBlockToAllConnectedMiners(block blockchain.Block) {
 }
 func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 	connectedMiners.RLock()
-	for _, minerAddr := range connectedMiners.all {
-		miner, err := rpc.Dial("tcp", minerAddr.String())
-		handleNonFatalError("Could not dial miner: "+minerAddr.String(), err)
+	for minerAddrString := range connectedMiners.all {
+		miner, err := rpc.Dial("tcp", minerAddrString)
+		if err != nil {
+			defer connectedMiners.RemoveMiner(minerAddrString)
+		}
+		handleNonFatalError("Could not dial miner", err)
 		if err == nil {
 			err = miner.Call("MServer.DisseminateOperation", op, nil)
 			// TODO - should this be fatal?
@@ -854,7 +875,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 	// 0. Check that this block isn't already part of the local blockChain
 	alreadyExists := blockChain.DoesBlockExist(hash)
 	if alreadyExists {
-		errLog.Printf("Invalid block received: already exists: %s\n", hash)
+		errLog.Printf("Block received [\u2717] already exists: %s\n", hash)
 		return false
 	}
 
@@ -866,14 +887,14 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 
 	prevBlockExistsLocally = blockChain.DoesBlockExist(block.PrevHash)
 	if !prevBlockExistsLocally {
-		errLog.Printf("Invalid block received: no previous block found\n")
+		errLog.Printf("Block received [\u2717] no previous block found\n")
 		return false
 	}
 
 	prevBlock := blockChain.GetBlockByHash(block.PrevHash)
 	isNextBlock := block.BlockNum == prevBlock.BlockNum+1
 	if !isNextBlock {
-		errLog.Printf("Invalid block received: invalid BlockNum [%d]\n", block.BlockNum)
+		errLog.Printf("Block received [\u2717] invalid BlockNum [%d]\n", block.BlockNum)
 		return false
 	}
 
@@ -887,7 +908,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 
 	hasValidPoW := verifyTrailingZeros(hash, proofDifficulty)
 	if !hasValidPoW {
-		errLog.Printf("Invalid block received: invalid proof-of-work\n")
+		errLog.Printf("Block received [\u2717] invalid proof-of-work\n")
 		return false
 	}
 
@@ -897,7 +918,7 @@ func (s *MServer) isValidBlock(block blockchain.Block) bool {
 		return false
 	}
 
-	outLog.Printf("Valid block received: %s\n", hash)
+	outLog.Printf("Block received [\u2713] %s\n", hash)
 	return true
 }
 
