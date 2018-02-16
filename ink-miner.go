@@ -24,7 +24,6 @@ import (
 	"bytes"
 	"crypto/rand"
 
-	"./args"
 	"./blockartlib"
 	"./blockchain"
 	"./util"
@@ -72,6 +71,12 @@ type InkMiner struct {
 	privKey  *ecdsa.PrivateKey
 	settings *blockartlib.MinerNetSettings
 }
+
+type MinerInfo struct {
+	Address net.Addr
+	Key     ecdsa.PublicKey
+}
+
 
 type MServer struct {
 	inkMiner *InkMiner // TODO: Not sure if MServer needs to know about InkMiner
@@ -242,7 +247,7 @@ func (m InkMiner) getNodesFromServer() {
 // Registers the miner node on the server by making an RPC call.
 // Returns the miner network settings retrieved from the server.
 func (m InkMiner) register() blockartlib.MinerNetSettings {
-	req := args.MinerInfo{
+	req := MinerInfo{
 		Address: m.addr,
 		Key:     *m.pubKey,
 	}
