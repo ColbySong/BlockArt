@@ -6,7 +6,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"strings"
 
 	"./blockartlib"
+	"./util"
 )
 
 type block struct {
@@ -23,14 +23,10 @@ type block struct {
 }
 
 func main() {
-	// Command line input parsing
-	flag.Parse()
-	if len(flag.Args()) != 2 {
-		fmt.Fprintln(os.Stderr, "./generate-canvas [privKey] [miner ip:port]")
-		os.Exit(1)
-	}
-	priv := flag.Arg(0)
-	minerAddr := flag.Arg(1)
+	priv := util.GetMinerPrivateKey()
+	minerAddr := util.GetMinerAddr()
+	fmt.Printf("Miner Private Key: %s\nMiner Address: %s\n", priv, minerAddr)
+
 	privKey, _ := ParsePrivateKey(priv)
 
 	// Open a canvas.
