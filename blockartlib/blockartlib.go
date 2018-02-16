@@ -353,7 +353,6 @@ func (c CanvasStruct) DeleteShape(validateNum uint8, shapeHash string) (inkRemai
 }
 
 func (c CanvasStruct) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	// TODO: init shapeHashes string array?
 	err = c.MinerRPC.Call("MArtNode.GetShapes", blockHash, &shapeHashes)
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
@@ -374,7 +373,6 @@ func (c CanvasStruct) GetGenesisBlock() (blockHash string, err error) {
 }
 
 func (c CanvasStruct) GetChildren(blockHash string) (blockHashes []string, err error) {
-	// TODO: init blockHashes string array?
 	err = c.MinerRPC.Call("MArtNode.GetChildren", blockHash, &blockHashes)
 	if err != nil {
 		if strings.EqualFold(err.Error(), ErrorName[INVALIDBLOCKHASH]) {
@@ -386,7 +384,6 @@ func (c CanvasStruct) GetChildren(blockHash string) (blockHashes []string, err e
 }
 
 func (c CanvasStruct) CloseCanvas() (inkRemaining uint32, err error) {
-	//TODO: so far, can't see what info miner needs to know about artnode upon disconnect
 	var ignoredreq = true
 	var resp uint32
 	err = c.MinerRPC.Call("MArtNode.GetInk", ignoredreq, &resp)

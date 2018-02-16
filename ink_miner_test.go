@@ -133,8 +133,9 @@ func setUpBlockChain() {
 
 	blockChainMock = blockchain.BlockChain{
 		Blocks:     blocks,
-		NewestHash: blockFourHash,
 	}
+
+	blockChainMock.SetNewestHash(blockFourHash)
 
 	//init global vars
 	pendingOperations = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
@@ -296,7 +297,7 @@ func TestDeletedRefundsInk(t *testing.T) {
 
 	opRecordsBlockFive[opRecFourHash] = &minerTwoOpRecordDelete // delete op on miner2
 	blockChain.Blocks[blockFiveHash] = &opDeleteBlockMinerTwo // block with delete op for miner2
-	blockChain.NewestHash = blockFiveHash // delete block is newest block
+	blockChain.SetNewestHash(blockFiveHash) // delete block is newest block
 
 	if ink := GetInkTraversal(&mockInkMiner, &minerTwoPublicKey); ink != 240 { // 50 + 100(opblock_2op) - 10(op) - 10(op) + 100(opblock_1op) + 10(inkrefund)
 		t.Errorf("Expected ink for miner 2: 240, but got %d", ink)
