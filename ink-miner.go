@@ -133,7 +133,7 @@ func main() {
 	// Establish RPC channel to server
 	server, err := rpc.Dial("tcp", serverAddr)
 	handleFatalError("Could not dial server", err)
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	addr, err := net.ResolveTCPAddr("tcp", ":0")
 	handleFatalError("Could not resolve miner address", err)
 
 	inbound, err := net.ListenTCP("tcp", addr)
