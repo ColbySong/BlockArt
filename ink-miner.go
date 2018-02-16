@@ -239,6 +239,7 @@ func (m InkMiner) getNodesFromServer() {
 	var nodes []net.Addr
 	err := m.server.Call("RServer.GetNodes", m.pubKey, &nodes)
 	handleFatalError("Could not get nodes from server", err)
+	fmt.Println(nodes)
 	for _, nodeAddr := range nodes {
 		connectedMiners.AddMiner(nodeAddr)
 	}
@@ -355,6 +356,7 @@ func removeOperationsFromPendingOperations(opRecords map[string]*blockchain.OpRe
 
 func sendBlockToAllConnectedMiners(block blockchain.Block) {
 	connectedMiners.RLock()
+	outLog.Println(len(connectedMiners.all))
 	for minerAddrString := range connectedMiners.all {
 		miner, err := rpc.Dial("tcp", minerAddrString)
 		if err != nil {
@@ -1093,6 +1095,19 @@ func computeBlockChainHash(blockChain blockchain.BlockChain) string {
 	hash := md5.New()
 	hash.Write(chainBytes)
 	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// RPC Target
+func (s *MServer) RegisterMiner(addr string, resp *bool) error {
+	parsedAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if s.inkMiner.addr.String() == parsedAddr.String() {
+		outLog.Println("SELF")
+		return nil
+	}
+
+	handleFatalError("Could not parse address", err)
+	connectedMiners.AddMiner(parsedAddr)
+	return nil
 }
 
 // *FOR TESTING PURPOSES ONLY*
