@@ -171,10 +171,30 @@ func main() {
 	handleFatalError("Listen error", err)
 	outLog.Printf("MServer started. Receiving on %s\n", inbound.Addr().String())
 
+	saveAddrAndPrivKeyToFile(inbound.Addr(), privKey)
+
 	for {
 		conn, _ := inbound.Accept()
 		go minerServer.ServeConn(conn)
 	}
+}
+
+func saveAddrAndPrivKeyToFile(addr net.Addr, privKey string) {
+	d1 := []byte(addr.String())
+	f1, err := os.Create("minerAddr")
+	handleFatalError("Couldn't create address file", err)
+	_, err = f1.Write(d1)
+	handleFatalError("Couldn't save address to file", err)
+	f1.Close()
+
+	d2 := []byte(privKey)
+	f2, err := os.Create("minerPrivKey")
+	handleFatalError("Couldn't create privKey file", err)
+	_, err = f2.Write(d2)
+	handleFatalError("Couldn't save privKey to file", err)
+	f2.Close()
+
+	outLog.Println("Saved miner address and private key to files.")
 }
 
 // Keep track of minimum number of miners at all times (MinNumMinerConnections)
