@@ -63,6 +63,8 @@ func generateCanvas(canvas blockartlib.Canvas, canvasSettings blockartlib.Canvas
 		return err
 	}
 
+	// printBlockChain(blockchain)
+
 	canvasShapes, err := getCanvasShapes(canvas, genesisBlockHash, blockchain)
 	if err != nil {
 		return err
@@ -74,6 +76,12 @@ func generateCanvas(canvas blockartlib.Canvas, canvasSettings blockartlib.Canvas
 	}
 
 	return nil
+}
+
+func printBlockChain(blockchain map[string]*block) {
+	for _, block := range blockchain {
+		fmt.Println(block)
+	}
 }
 
 func getCanvasShapes(canvas blockartlib.Canvas, genesisBlockHash string, blockchain map[string]*block) ([]string, error) {

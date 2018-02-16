@@ -59,6 +59,7 @@ func (miners *ConnectedMiners) GetConnectionCount() uint8 {
 
 	return uint8(len(miners.all))
 }
+
 type PendingOperations struct {
 	sync.RWMutex
 	all map[string]*blockchain.OpRecord
@@ -76,7 +77,6 @@ type MinerInfo struct {
 	Address net.Addr
 	Key     ecdsa.PublicKey
 }
-
 
 type MServer struct {
 	inkMiner *InkMiner // TODO: Not sure if MServer needs to know about InkMiner
@@ -229,6 +229,7 @@ func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
 
 			chains = append(chains, &resp)
 		}
+		miner.Close()
 	}
 	connectedMiners.RUnlock()
 
@@ -365,6 +366,7 @@ func sendBlockToAllConnectedMiners(block blockchain.Block) {
 			err = miner.Call("MServer.DisseminateBlock", block, nil)
 			handleNonFatalError("Could not call RPC method: MServer.DisseminateBlock", err)
 		}
+		miner.Close()
 	}
 	connectedMiners.RUnlock()
 
@@ -382,6 +384,7 @@ func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 			// TODO - should this be fatal?
 			handleFatalError("Could not call RPC method: MServer.DisseminateOperation", err)
 		}
+		miner.Close()
 	}
 	connectedMiners.RUnlock()
 }
