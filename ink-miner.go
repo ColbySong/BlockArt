@@ -642,7 +642,7 @@ func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRem
 					return nil
 				}
 				outLog.Printf("Delete shape operation was not added to the longest chain, trying again...")
-				continue
+				continue 
 				//return miscErr("Delete Shape was unsuccessful")
 			}
 		}
