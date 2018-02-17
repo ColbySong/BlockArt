@@ -119,7 +119,7 @@ func main() {
 	// Command line input parsing
 	flag.Parse()
 	if len(flag.Args()) != 3 {
-		fmt.Fprintln(os.Stderr, "./server [server ip:port] [pubKey] [privKey]")
+		fmt.Fprintln(os.Stderr, "go run ink-miner.go [server ip:port] [pubKey] [privKey]")
 		os.Exit(1)
 	}
 	serverAddr := flag.Arg(0)
