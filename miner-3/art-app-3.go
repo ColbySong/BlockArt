@@ -34,7 +34,7 @@ func main() {
 	fmt.Printf("[ArtApp_3] CurrentInk: %d\n", ink)
 
 	// AddShape green line
-	shape1SvgStr := "M 50 120 L 80 120" //inkReq: 30
+	shape1SvgStr := "M 130 20 L 160 20" //inkReq: 30
 	fill1 := "transparent"
 	stroke1 := "green"
 	fmt.Printf("[ArtApp_3] AddShape1[Incoming]: svgstr: %s, fill: %s, stroke: %s\n", shape1SvgStr, fill1, stroke1)
