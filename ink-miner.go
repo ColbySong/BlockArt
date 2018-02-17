@@ -489,87 +489,93 @@ func (a *MArtNode) OpenCanvas(privKey ecdsa.PrivateKey, canvasSettings *blockart
 
 func (a *MArtNode) AddShape(shapeRequest blockartlib.AddShapeRequest, newShapeResp *blockartlib.NewShapeResponse) error {
 	outLog.Printf("Reached AddShape\n")
-	inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
-	if inkRemaining <= 0 {
-		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
-	}
-	requestedSVGPath, _ := util.ConvertPathToPoints(shapeRequest.SvgString)
-	isTransparent := shapeRequest.IsTransparent
-	isClosed := shapeRequest.IsClosed
 
-	// check if shape is in bound
-	canvasSettings := a.inkMiner.settings.CanvasSettings
-	if util.CheckOutOfBounds(requestedSVGPath, canvasSettings.CanvasXMax, canvasSettings.CanvasYMax) != nil {
-		return errors.New(util.ShapeErrorName[util.OUTOFBOUNDS])
-	}
-
-	// check if shape overlaps with shapes from OTHER application
-	currentSVGStringsOnCanvas := GetShapeTraversal(a.inkMiner, a.inkMiner.pubKey)
-	for _, svgPathString := range currentSVGStringsOnCanvas {
-		svgPath, _ := util.ConvertPathToPoints(svgPathString)
-		if util.CheckOverlap(svgPath, requestedSVGPath) != nil {
-			return errors.New(util.ShapeErrorName[util.SHAPEOVERLAP])
+	for {
+		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
+		if inkRemaining <= 0 {
+			return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 		}
-	}
+		requestedSVGPath, _ := util.ConvertPathToPoints(shapeRequest.SvgString)
+		isTransparent := shapeRequest.IsTransparent
+		isClosed := shapeRequest.IsClosed
 
-	// if shape is inbound and does not overlap, then calculate the ink required
-	inkRequired := util.CalculateInkRequired(requestedSVGPath, isTransparent, isClosed)
-	if inkRequired > uint32(inkRemaining) {
-		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
-	}
+		// check if shape is in bound
+		canvasSettings := a.inkMiner.settings.CanvasSettings
+		if util.CheckOutOfBounds(requestedSVGPath, canvasSettings.CanvasXMax, canvasSettings.CanvasYMax) != nil {
+			return errors.New(util.ShapeErrorName[util.OUTOFBOUNDS])
+		}
 
-	// validate against pending operations
-	var pendingInkUsed int
-	for _, pendingOp := range pendingOperations.all {
-		if reflect.DeepEqual(pendingOp.AuthorPubKey, *a.inkMiner.pubKey) {
-			if isOpDelete(pendingOp.Op) {
-				pendingInkUsed -= int(pendingOp.InkUsed)
-			} else {
-				pendingInkUsed += int(pendingOp.InkUsed)
-			}
-		} else {
-			svgPathString, _ := parsePath(pendingOp.Op)
-			svgPathCoords, _ := util.ConvertPathToPoints(svgPathString)
-			if util.CheckOverlap(requestedSVGPath, svgPathCoords) != nil {
+		// check if shape overlaps with shapes from OTHER application
+		currentSVGStringsOnCanvas := GetShapeTraversal(a.inkMiner, a.inkMiner.pubKey)
+		for _, svgPathString := range currentSVGStringsOnCanvas {
+			svgPath, _ := util.ConvertPathToPoints(svgPathString)
+			if util.CheckOverlap(svgPath, requestedSVGPath) != nil {
 				return errors.New(util.ShapeErrorName[util.SHAPEOVERLAP])
 			}
 		}
-	}
 
-	if pendingInkUsed+int(inkRequired) > inkRemaining {
-		return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
-	}
-
-	// create svg path
-	shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
-
-	// sign the shape
-	r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(shapeSvgPathString))
-	handleFatalError("unable to sign shape", err)
-
-	opRecord := blockchain.OpRecord{
-		Op:           shapeSvgPathString,
-		OpSigS:       s,
-		OpSigR:       r,
-		InkUsed:      inkRequired,
-		AuthorPubKey: *a.inkMiner.pubKey,
-	}
-
-	opRecordHash := ComputeOpRecordHash(opRecord)
-	a.inkMiner.broadcastNewOperation(opRecord, opRecordHash)
-
-	// wait until return from validateNum validation
-	if blockHash, validated := IsValidatedByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated {
-		newShapeResp.ShapeHash = opRecordHash
-		newShapeResp.BlockHash = blockHash
-		inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
-		if inkRemaining < 0 {
-			return miscErr("AddShape: Shouldn't have negative ink after successful implementation of block")
+		// if shape is inbound and does not overlap, then calculate the ink required
+		inkRequired := util.CalculateInkRequired(requestedSVGPath, isTransparent, isClosed)
+		if inkRequired > uint32(inkRemaining) {
+			return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
 		}
-		newShapeResp.InkRemaining = uint32(inkRemaining)
-		return nil
+
+		// validate against pending operations
+		var pendingInkUsed int
+		for _, pendingOp := range pendingOperations.all {
+			if reflect.DeepEqual(pendingOp.AuthorPubKey, *a.inkMiner.pubKey) {
+				if isOpDelete(pendingOp.Op) {
+					pendingInkUsed -= int(pendingOp.InkUsed)
+				} else {
+					pendingInkUsed += int(pendingOp.InkUsed)
+				}
+			} else {
+				svgPathString, _ := parsePath(pendingOp.Op)
+				svgPathCoords, _ := util.ConvertPathToPoints(svgPathString)
+				if util.CheckOverlap(requestedSVGPath, svgPathCoords) != nil {
+					return errors.New(util.ShapeErrorName[util.SHAPEOVERLAP])
+				}
+			}
+		}
+
+		if pendingInkUsed+int(inkRequired) > inkRemaining {
+			return errors.New(blockartlib.ErrorName[blockartlib.INSUFFICIENTINK])
+		}
+
+		// create svg path
+		shapeSvgPathString := util.ConvertToSvgPathString(shapeRequest.SvgString, shapeRequest.Stroke, shapeRequest.Fill)
+
+		// sign the shape
+		r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(shapeSvgPathString))
+		handleFatalError("unable to sign shape", err)
+
+		opRecord := blockchain.OpRecord{
+			Op:           shapeSvgPathString,
+			OpSigS:       s,
+			OpSigR:       r,
+			InkUsed:      inkRequired,
+			AuthorPubKey: *a.inkMiner.pubKey,
+		}
+
+		opRecordHash := ComputeOpRecordHash(opRecord)
+		a.inkMiner.broadcastNewOperation(opRecord, opRecordHash)
+
+		// wait until return from validateNum validation
+		if blockHash, validated := IsValidatedByValidateNum(opRecordHash, shapeRequest.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated {
+			newShapeResp.ShapeHash = opRecordHash
+			newShapeResp.BlockHash = blockHash
+			inkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
+			if inkRemaining < 0 {
+				return miscErr("AddShape: Shouldn't have negative ink after successful implementation of block")
+			}
+			newShapeResp.InkRemaining = uint32(inkRemaining)
+			outLog.Printf("Add Shape was successful: svgPath: %s, shapeHash: %s, blockHash: %s, inkRequired: %d, inkRemaining: %d",
+				shapeSvgPathString, opRecordHash, blockHash, inkRequired, inkRemaining)
+			return nil
+		}
+		outLog.Printf("Shape was not added to longest chain, trying again...")
+		//return miscErr("AddShape was unsuccessful")
 	}
-	return miscErr("AddShape was unsuccessful")
 }
 
 func (a *MArtNode) GetSvgString(shapeHash string, svgString *string) error {
@@ -602,41 +608,46 @@ func concatStrings(strArray []string) string {
 func (a *MArtNode) DeleteShape(deleteShapeReq blockartlib.DeleteShapeReq, inkRemaining *uint32) error {
 	outLog.Printf("Reached DeleteShape\n")
 
-	if opRecord, _, exists := GetOpRecordTraversal(deleteShapeReq.ShapeHash, a.inkMiner.settings.GenesisBlockHash); exists {
-		if VerifyOpRecordAuthor(*a.inkMiner.pubKey, opRecord) {
-			newOp := concatStrings([]string{"delete ", opRecord.Op})
+	for {
+		if opRecord, _, exists := GetOpRecordTraversal(deleteShapeReq.ShapeHash, a.inkMiner.settings.GenesisBlockHash); exists {
+			if VerifyOpRecordAuthor(*a.inkMiner.pubKey, opRecord) {
+				newOp := concatStrings([]string{"delete ", opRecord.Op})
 
-			// sign the shape
-			r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(newOp))
-			handleFatalError("unable to sign shape", err)
+				// sign the shape
+				r, s, err := ecdsa.Sign(rand.Reader, a.inkMiner.privKey, []byte(newOp))
+				handleFatalError("unable to sign shape", err)
 
-			inkRefunded := opRecord.InkUsed
+				inkRefunded := opRecord.InkUsed
 
-			newOpRecord := blockchain.OpRecord{
-				Op:           newOp,
-				InkUsed:      inkRefunded,
-				OpSigS:       s,
-				OpSigR:       r,
-				AuthorPubKey: *a.inkMiner.pubKey,
-			}
-			opRecordHash := ComputeOpRecordHash(newOpRecord)
-			a.inkMiner.broadcastNewOperation(newOpRecord, opRecordHash)
-
-			// wait until return from validateNum validation
-			if _, validated := IsValidatedByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated {
-				newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
-
-				if newInkRemaining < 0 {
-					return miscErr("DeleteShape: Shouldn't have negative ink after successful implementation of block")
+				newOpRecord := blockchain.OpRecord{
+					Op:           newOp,
+					InkUsed:      inkRefunded,
+					OpSigS:       s,
+					OpSigR:       r,
+					AuthorPubKey: *a.inkMiner.pubKey,
 				}
-				*inkRemaining = uint32(newInkRemaining)
-				return nil
-			}
-			return miscErr("Delete Shape was unsuccessful")
-		}
-	}
-	return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOWNER])
+				opRecordHash := ComputeOpRecordHash(newOpRecord)
+				a.inkMiner.broadcastNewOperation(newOpRecord, opRecordHash)
 
+				// wait until return from validateNum validation
+				if blockHash, validated := IsValidatedByValidateNum(opRecordHash, deleteShapeReq.ValidateNum, a.inkMiner.settings.GenesisBlockHash, a.inkMiner.pubKey); validated {
+					newInkRemaining := GetInkTraversal(a.inkMiner, a.inkMiner.pubKey)
+
+					if newInkRemaining < 0 {
+						return miscErr("DeleteShape: Shouldn't have negative ink after successful implementation of block")
+					}
+					*inkRemaining = uint32(newInkRemaining)
+					outLog.Printf("Delete Shape was successful: svgPath: %s, shapeHash: %s, blockHash: %s, inkRefunded: %d, inkRemaining: %d",
+						newOp, opRecordHash, blockHash, inkRefunded, newInkRemaining)
+					return nil
+				}
+				outLog.Printf("Delete shape operation was not added to the longest chain, trying again...")
+				continue 
+				//return miscErr("Delete Shape was unsuccessful")
+			}
+		}
+		return errors.New(blockartlib.ErrorName[blockartlib.SHAPEOWNER])
+	}
 }
 
 // 1) Wait until op is taken off pending list => this means op has been incorporated into a block
