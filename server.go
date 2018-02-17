@@ -34,6 +34,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"strings"
+	"net/http"
 )
 
 // Errors that the server could return.
@@ -153,6 +155,7 @@ func main() {
 		os.Exit(1)
 	}
 
+
 	readConfigOrDie(*path)
 
 	rand.Seed(time.Now().UnixNano())
@@ -165,7 +168,14 @@ func main() {
 	l, e := net.Listen("tcp", config.RpcIpPort)
 
 	handleErrorFatal("listen error", e)
-	outLog.Printf("Server started. Receiving on %s\n", config.RpcIpPort)
+
+	addr := getServerIP()
+	strings := strings.Split(l.Addr().String(), ":")
+	port := strings[len(strings) - 1]
+
+	fullAddress := addr + ":" + port
+
+	outLog.Printf("Server started. Receiving on %s\n", fullAddress)
 
 	for {
 		conn, _ := l.Accept()
@@ -177,6 +187,16 @@ type MinerInfo struct {
 	Address net.Addr
 	Key     ecdsa.PublicKey
 }
+
+func getServerIP() string {
+	resp, _ := http.Get("http://myexternalip.com/raw")
+	bodyBytes, _ := ioutil.ReadAll(resp.Body)
+	bodyString := string(bodyBytes)
+	defer resp.Body.Close()
+
+	return bodyString
+}
+
 
 // Function to delete dead miners (no recent heartbeat)
 func monitor(k string, heartBeatInterval time.Duration) {

@@ -27,6 +27,8 @@ import (
 	"./blockartlib"
 	"./blockchain"
 	"./util"
+	"net/http"
+	"io/ioutil"
 )
 
 const HeartbeatMultiplier = 2
@@ -35,26 +37,26 @@ const FirstBlockNum = 1
 
 type ConnectedMiners struct {
 	sync.RWMutex
-	all map[string]*net.Addr
+	all map[string]*string
 }
 
-func (miners *ConnectedMiners) AddMiner(addr net.Addr, myAddr net.Addr) {
+func (miners *ConnectedMiners) AddMiner(addr string, myAddr string) {
 	miners.Lock()
 	defer miners.Unlock()
 
-	_, exists := miners.all[addr.String()]
+	_, exists := miners.all[addr]
 
 	if !exists {
-		miners.all[addr.String()] = &addr
-		outLog.Printf("Adding miner [%s]\n", addr.String())
+		miners.all[addr] = &addr
+		outLog.Printf("Adding miner [%s]\n", addr)
 
 		// Newly connected miner needs to know about this miner
-		miner, err := rpc.Dial("tcp", addr.String())
+		miner, err := rpc.Dial("tcp", addr)
 		handleNonFatalError("Could not dial miner", err)
 
 		var resp bool // unused
 		if err == nil {
-			err = miner.Call("MServer.RegisterMiner", myAddr.String(), &resp)
+			err = miner.Call("MServer.RegisterMiner", myAddr, &resp)
 			handleNonFatalError("Could not call RPC method: MServer.RegisterMiner", err)
 			miner.Close()
 		}
@@ -82,7 +84,7 @@ type PendingOperations struct {
 }
 
 type InkMiner struct {
-	addr     net.Addr
+	addr     string
 	server   *rpc.Client
 	pubKey   *ecdsa.PublicKey
 	privKey  *ecdsa.PrivateKey
@@ -104,7 +106,7 @@ type MArtNode struct {
 var (
 	errLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
 	outLog            *log.Logger = log.New(os.Stderr, "[miner] ", log.Lshortfile|log.LUTC|log.Lmicroseconds)
-	connectedMiners               = ConnectedMiners{all: make(map[string]*net.Addr)}
+	connectedMiners               = ConnectedMiners{all: make(map[string]*string)}
 	pendingOperations             = PendingOperations{all: make(map[string]*blockchain.OpRecord)}
 	blockChain                    = blockchain.BlockChain{Blocks: make(map[string]*blockchain.Block)}
 )
@@ -133,14 +135,23 @@ func main() {
 	// Establish RPC channel to server
 	server, err := rpc.Dial("tcp", serverAddr)
 	handleFatalError("Could not dial server", err)
+
 	addr, err := net.ResolveTCPAddr("tcp", ":0")
 	handleFatalError("Could not resolve miner address", err)
 
 	inbound, err := net.ListenTCP("tcp", addr)
+	strings := strings.Split(inbound.Addr().String(), ":")
+	port := strings[len(strings) - 1]
+	myIP := getMyIP()
+	fullAddress := myIP + ":" + port
 
+	//_, rerr := net.ResolveTCPAddr("tcp", fullAddress)
+	//fmt.Println(rerr)
+
+	fmt.Println("Full Address: ", fullAddress)
 	// Create InkMiner instance
 	miner := &InkMiner{
-		addr:    inbound.Addr(),
+		addr:    fullAddress,
 		server:  server,
 		pubKey:  &pub,
 		privKey: priv,
@@ -169,9 +180,9 @@ func main() {
 	minerServer.Register(mArtNode)
 
 	handleFatalError("Listen error", err)
-	outLog.Printf("MServer started. Receiving on %s\n", inbound.Addr().String())
+	outLog.Printf("MServer started. Receiving on %s\n", fullAddress)
 
-	saveAddrAndPrivKeyToFile(inbound.Addr(), privKey)
+	saveAddrAndPrivKeyToFile(fullAddress, privKey)
 
 	for {
 		conn, _ := inbound.Accept()
@@ -179,8 +190,18 @@ func main() {
 	}
 }
 
-func saveAddrAndPrivKeyToFile(addr net.Addr, privKey string) {
-	d1 := []byte(addr.String())
+func getMyIP() string {
+	resp, _ := http.Get("http://myexternalip.com/raw")
+	bodyBytes, _ := ioutil.ReadAll(resp.Body)
+	bodyString := string(bodyBytes)
+	defer resp.Body.Close()
+	bodyString = strings.TrimSuffix(bodyString, "\n")
+
+	return bodyString
+}
+
+func saveAddrAndPrivKeyToFile(addr string, privKey string) {
+	d1 := []byte(addr)
 	f1, err := os.Create("minerAddr")
 	handleFatalError("Couldn't create address file", err)
 	_, err = f1.Write(d1)
@@ -276,19 +297,21 @@ func (m InkMiner) getNodesFromServer() {
 	err := m.server.Call("RServer.GetNodes", m.pubKey, &nodes)
 	handleFatalError("Could not get nodes from server", err)
 	for _, nodeAddr := range nodes {
-		connectedMiners.AddMiner(nodeAddr, m.addr)
+		connectedMiners.AddMiner(nodeAddr.String(), m.addr)
 	}
 }
 
 // Registers the miner node on the server by making an RPC call.
 // Returns the miner network settings retrieved from the server.
 func (m InkMiner) register() blockartlib.MinerNetSettings {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", m.addr)
+	handleFatalError("could not resolve tcp addr", err)
 	req := MinerInfo{
-		Address: m.addr,
+		Address: tcpAddr,
 		Key:     *m.pubKey,
 	}
 	var resp blockartlib.MinerNetSettings
-	err := m.server.Call("RServer.Register", req, &resp)
+	err = m.server.Call("RServer.Register", req, &resp)
 	handleFatalError("Could not register miner", err)
 	return resp
 }
@@ -1136,10 +1159,8 @@ func computeBlockChainHash(blockChain blockchain.BlockChain) string {
 // RPC Target
 // Registers a miner locally for bidirectional connection
 func (s *MServer) RegisterMiner(addr string, resp *bool) error {
-	parsedAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if s.inkMiner.addr.String() != parsedAddr.String() {
-		handleFatalError("Could not parse address", err)
-		go connectedMiners.AddMiner(parsedAddr, s.inkMiner.addr)
+	if s.inkMiner.addr != addr {
+		go connectedMiners.AddMiner(addr, s.inkMiner.addr)
 	}
 	*resp = true
 	return nil
