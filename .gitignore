@@ -2,6 +2,8 @@
 server/
 
 **/canvas.html
+**/minerAddr
+**/minerPrivKey
 
 # Jetbrains
 .idea/modules.xml
