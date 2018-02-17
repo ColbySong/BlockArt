@@ -1,3 +1,5 @@
+// ADD LINE THAT INTERSECTS ART-APP-3 -> EXPECT SHAPE OVERLAP ERROR
+
 package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to

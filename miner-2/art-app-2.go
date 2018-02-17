@@ -1,3 +1,5 @@
+// ADD RED FILLED TRIANGLE, THEN DELETES RED FILLED TRIANGLE -> OK (TRIANGLE DELETED)
+
 package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to
