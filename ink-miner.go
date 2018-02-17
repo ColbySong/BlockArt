@@ -284,8 +284,8 @@ func getBlockChainsFromNeighbours() []*blockchain.BlockChain {
 			handleFatalError("Could not call RPC method: MServer.GetBlockChain", err)
 
 			chains = append(chains, &resp)
+			miner.Close()
 		}
-		miner.Close()
 	}
 	connectedMiners.RUnlock()
 
@@ -424,8 +424,8 @@ func sendBlockToAllConnectedMiners(block blockchain.Block) {
 		if err == nil {
 			err = miner.Call("MServer.DisseminateBlock", block, nil)
 			handleNonFatalError("Could not call RPC method: MServer.DisseminateBlock", err)
+			miner.Close()
 		}
-		miner.Close()
 	}
 	connectedMiners.RUnlock()
 }
@@ -441,8 +441,8 @@ func sendOpToAllConnectedMiners(op blockchain.OpRecord) {
 		if err == nil {
 			err = miner.Call("MServer.DisseminateOperation", op, nil)
 			handleNonFatalError("Could not call RPC method: MServer.DisseminateOperation", err)
+			miner.Close()
 		}
-		miner.Close()
 	}
 	connectedMiners.RUnlock()
 }
