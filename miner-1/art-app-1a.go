@@ -1,3 +1,5 @@
+// ADD BLUE TRANSPARENT SQUARE -> OK
+
 package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to

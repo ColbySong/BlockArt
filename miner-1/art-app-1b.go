@@ -1,3 +1,5 @@
+// ADDS BLUE FILLED SQUARE THAT OVERLAPS ART-APP-1A -> OK
+
 package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to

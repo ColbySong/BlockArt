@@ -1,3 +1,5 @@
+// ADD HUGE BLACK FILLED BOX -> EXPECT INSUFFICIENT INK ERROR
+
 package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to
