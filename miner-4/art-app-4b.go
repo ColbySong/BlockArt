@@ -31,25 +31,18 @@ func main() {
 	if err != nil {
 		return
 	}
-	fmt.Printf("[ArtApp_2] CurrentInk: %d\n", ink)
+	fmt.Printf("[ArtApp_4b] CurrentInk: %d\n", ink)
 
-	// AddShape red fill triangle
-	shape1SvgStr := "M 80 20 h 20 v 20 Z" //inkReq: 200
-	fill1 := "red"
-	stroke1 := "red"
-	fmt.Printf("[ArtApp_2] AddShape1[Incoming]: svgstr: %s, fill: %s, stroke: %s\n", shape1SvgStr, fill1, stroke1)
+	// AddShape line that illegally overlaps
+	shape1SvgStr := "M 145 5 L 145 35" //inkReq: a lot
+	fill1 := "transparent"
+	stroke1 := "purple"
+	fmt.Printf("[ArtApp_4b] AddShape1[Incoming]: svgstr: %s, fill: %s, stroke: %s\n", shape1SvgStr, fill1, stroke1)
 	shapeHash1, blockHash1, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, shape1SvgStr, fill1, stroke1)
 	if checkError(err) != nil {
 		return
 	}
-	fmt.Printf("[ArtApp_2] AddShape1[Return]: shapeHash: %s, blockHash: %s ,ink: %d\n", shapeHash1, blockHash1, ink)
-
-	fmt.Printf("[ArtApp_2] DeleteShape1[Incoming]: shapeHash: %s\n", shapeHash1)
-	ink, err = canvas.DeleteShape(validateNum, shapeHash1)
-	if checkError(err) != nil {
-		return
-	}
-	fmt.Printf("[ArtApp_2] DeleteShape1[Return]: inkRemaining: %d\n", ink)
+	fmt.Printf("[ArtApp_4b] AddShape1[Return]: shapeHash: %s, blockHash: %s ,ink: %d\n", shapeHash1, blockHash1, ink)
 
 	// Close the canvas.
 	_, err = canvas.CloseCanvas()
@@ -63,7 +56,7 @@ func main() {
 // If error is non-nil, print it out and return it.
 func checkError(err error) error {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtApp_2] Error ", err.Error())
+		fmt.Fprintf(os.Stderr, "[ArtApp_4b] Error ", err.Error())
 		return err
 	}
 	return nil
