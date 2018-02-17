@@ -34,7 +34,7 @@ func main() {
 	fmt.Printf("[ArtApp_1a] CurrentInk: %d\n", ink)
 
 	// AddShape blue transparent square
-	shape1SvgStr := "M 50 50 L 70 50 L 70 70 L 50 70 Z" //inkReq: 80
+	shape1SvgStr := "M 10 10 L 30 10 L 30 30 L 10 30 Z" //inkReq: 80
 	fill1 := "transparent"
 	stroke1 := "blue"
 	fmt.Printf("[ArtApp_1a] AddShape1[Incoming]: svgstr: %s, fill: %s, stroke: %s\n", shape1SvgStr, fill1, stroke1)
