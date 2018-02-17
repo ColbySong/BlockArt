@@ -6,7 +6,7 @@ cd miner-$minerNum
 
 pwd
 
-go run generate-canvas.go
+go run ../generate-canvas.go
 
 echo Canvas:
 

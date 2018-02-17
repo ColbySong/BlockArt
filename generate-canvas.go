@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"../blockartlib"
-	"../util"
+	"./blockartlib"
+	"./util"
 )
 
 type block struct {
